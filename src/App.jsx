@@ -296,6 +296,12 @@ function Dashboard({ session }) {
   const [uploadState, setUploadState] = useState("idle"); // idle | loading | success | error
   const [uploadMessage, setUploadMessage] = useState("");
   const [reviewRow, setReviewRow] = useState(null); // null = modal closed
+  const [tablePage, setTablePage] = useState(1);
+  const [tableSearch, setTableSearch] = useState("");
+  const [tableSort, setTableSort] = useState({ key: "create_date", dir: "desc" });
+  const [editingCell, setEditingCell] = useState(null); // { id, field }
+  const [editingValue, setEditingValue] = useState("");
+  const [savingCell, setSavingCell] = useState(null);
 
   useEffect(() => {
     async function fetchData() {
@@ -314,7 +320,12 @@ function Dashboard({ session }) {
           agent:   r.sales_agent    ?? '',
           stage:   r.stage          ?? '',
           date:    r.create_date    ?? '',
-          reason:  r.reason         ?? '',
+          reason:     r.reason      ?? '',
+          validity:   r.validity    ?? null,
+          po_qt:      r.po_qt       ?? '',
+          follow_up_1: r.follow_up_1 ?? '',
+          follow_up_2: r.follow_up_2 ?? '',
+          follow_up_3: r.follow_up_3 ?? '',
         }));
         setRawData(mapped);
       } catch (err) {
@@ -412,6 +423,7 @@ function Dashboard({ session }) {
     { id: "agents", label: "Sales Agents" },
     { id: "pipeline", label: "Top Pipeline" },
     { id: "trend", label: "Monthly Trend" },
+    { id: "table", label: "Data Table" },
   ];
 
   // ── Excel upload ─────────────────────────────────────────────────────────
@@ -479,15 +491,20 @@ function Dashboard({ session }) {
       .order("id", { ascending: true });
     if (!fetchErr) {
       setRawData(data.map(r => ({
-        qo:      r.qo_number      ?? "",
-        company: r.company_name   ?? "",
-        contact: r.contact_person ?? "",
-        project: r.project_name   ?? "",
-        price:   parseFloat(r.total_price) || 0,
-        agent:   r.sales_agent    ?? "",
-        stage:   r.stage          ?? "",
-        date:    r.create_date    ?? "",
-        reason:  r.reason         ?? "",
+        qo:          r.qo_number      ?? "",
+        company:     r.company_name   ?? "",
+        contact:     r.contact_person ?? "",
+        project:     r.project_name   ?? "",
+        price:       parseFloat(r.total_price) || 0,
+        agent:       r.sales_agent    ?? "",
+        stage:       r.stage          ?? "",
+        date:        r.create_date    ?? "",
+        reason:      r.reason         ?? "",
+        validity:    r.validity       ?? null,
+        po_qt:       r.po_qt          ?? "",
+        follow_up_1: r.follow_up_1    ?? "",
+        follow_up_2: r.follow_up_2    ?? "",
+        follow_up_3: r.follow_up_3    ?? "",
       })));
     }
   }
@@ -530,6 +547,44 @@ function Dashboard({ session }) {
       setUploadState("error");
       setUploadMessage(err.message);
       setTimeout(() => setUploadState("idle"), 5000);
+    }
+  }
+
+  async function handleCreateRow() {
+    const today = new Date().toISOString().split("T")[0];
+    const newRow = {
+      qo_number:      `NEW-${Date.now()}`,
+      company_name:   "",
+      contact_person: "",
+      project_name:   "",
+      total_price:    0,
+      validity:       30,
+      sales_agent:    agents[0] ?? "",
+      stage:          "On track",
+      create_date:    today,
+      reason:         "",
+      po_qt:          "",
+      follow_up_1:    "",
+      follow_up_2:    "",
+      follow_up_3:    "",
+    };
+    setReviewRow(newRow);
+  }
+
+  async function handleCellSave(qoNumber, field, value) {
+    setSavingCell(`${qoNumber}-${field}`);
+    try {
+      const { error } = await supabase
+        .from("sales_pipeline")
+        .update({ [field]: value })
+        .eq("qo_number", qoNumber);
+      if (error) throw error;
+      await refreshData();
+    } catch (err) {
+      console.error("Cell save error:", err);
+    } finally {
+      setSavingCell(null);
+      setEditingCell(null);
     }
   }
 
@@ -914,6 +969,209 @@ function Dashboard({ session }) {
             </div>
           </div>
         )}
+
+        {/* DATA TABLE TAB */}
+        {activeTab === "table" && (() => {
+          const PAGE_SIZE = 20;
+          const TABLE_COLS = [
+            { key: "qo_number",      label: "QO Number",    width: 110, editable: false },
+            { key: "create_date",    label: "Date",         width: 110, editable: true,  type: "date" },
+            { key: "company_name",   label: "Company",      width: 200, editable: true,  type: "text" },
+            { key: "contact_person", label: "Contact",      width: 150, editable: true,  type: "text" },
+            { key: "project_name",   label: "Project",      width: 200, editable: true,  type: "text" },
+            { key: "total_price",    label: "Price (฿)",    width: 110, editable: true,  type: "number" },
+            { key: "sales_agent",    label: "Agent",        width: 110, editable: true,  type: "agent" },
+            { key: "stage",          label: "Stage",        width: 100, editable: true,  type: "stage" },
+            { key: "po_qt",          label: "PO/QT",        width: 90,  editable: true,  type: "text" },
+            { key: "validity",       label: "Validity",     width: 80,  editable: true,  type: "number" },
+            { key: "reason",         label: "Reason",       width: 160, editable: true,  type: "text" },
+            { key: "follow_up_1",    label: "Follow Up 1",  width: 130, editable: true,  type: "text" },
+            { key: "follow_up_2",    label: "Follow Up 2",  width: 130, editable: true,  type: "text" },
+            { key: "follow_up_3",    label: "Follow Up 3",  width: 130, editable: true,  type: "text" },
+          ];
+
+          const filtered = (RAW_DATA ?? []).map(r => ({
+            qo_number:      r.qo,
+            create_date:    r.date,
+            company_name:   r.company,
+            contact_person: r.contact,
+            project_name:   r.project,
+            total_price:    r.price,
+            sales_agent:    r.agent,
+            stage:          r.stage,
+            reason:         r.reason,
+            po_qt:          r.po_qt       ?? "",
+            validity:       r.validity    ?? "",
+            follow_up_1:    r.follow_up_1 ?? "",
+            follow_up_2:    r.follow_up_2 ?? "",
+            follow_up_3:    r.follow_up_3 ?? "",
+          })).filter(r => {
+            if (!tableSearch.trim()) return true;
+            const q = tableSearch.toLowerCase();
+            return (
+              r.qo_number?.toLowerCase().includes(q) ||
+              r.company_name?.toLowerCase().includes(q) ||
+              r.contact_person?.toLowerCase().includes(q) ||
+              r.project_name?.toLowerCase().includes(q) ||
+              r.sales_agent?.toLowerCase().includes(q) ||
+              r.stage?.toLowerCase().includes(q)
+            );
+          });
+
+          const sorted = [...filtered].sort((a, b) => {
+            const { key, dir } = tableSort;
+            const av = a[key] ?? "";
+            const bv = b[key] ?? "";
+            let cmp = 0;
+            if (key === "total_price" || key === "validity") {
+              cmp = (parseFloat(av) || 0) - (parseFloat(bv) || 0);
+            } else {
+              cmp = String(av).localeCompare(String(bv));
+            }
+            return dir === "asc" ? cmp : -cmp;
+          });
+
+          const totalPages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
+          const page = Math.min(tablePage, totalPages);
+          const pageRows = sorted.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+          const toggleSort = key => {
+            setTableSort(s => ({ key, dir: s.key === key && s.dir === "asc" ? "desc" : "asc" }));
+            setTablePage(1);
+          };
+
+          const SortIcon = ({ colKey }) => {
+            if (tableSort.key !== colKey) return <span style={{ opacity: 0.3, marginLeft: 4 }}>↕</span>;
+            return <span style={{ marginLeft: 4, color: "#2563eb" }}>{tableSort.dir === "asc" ? "↑" : "↓"}</span>;
+          };
+
+          const stageColor = s => s === "Order" ? "#10b981" : s === "On track" ? "#f59e0b" : s === "Fail" ? "#ef4444" : "#94a3b8";
+
+          function CellContent({ row, col }) {
+            const cellId = `${row.qo_number}-${col.key}`;
+            const isEditing = editingCell?.id === row.qo_number && editingCell?.field === col.key;
+            const isSaving = savingCell === cellId;
+            const val = row[col.key];
+
+            if (!col.editable) return (
+              <span style={{ fontSize: 12, color: "#475569" }}>{val ?? "—"}</span>
+            );
+
+            if (isEditing) {
+              const commitEdit = () => {
+                if (String(editingValue) !== String(val ?? "")) {
+                  handleCellSave(row.qo_number, col.key, col.type === "number" ? parseFloat(editingValue) || 0 : editingValue);
+                } else {
+                  setEditingCell(null);
+                }
+              };
+              if (col.type === "stage") return (
+                <select autoFocus value={editingValue} onBlur={commitEdit}
+                  onChange={e => { setEditingValue(e.target.value); }}
+                  onKeyDown={e => e.key === "Escape" && setEditingCell(null)}
+                  style={{ fontSize: 12, border: "1px solid #6366f1", borderRadius: 4, padding: "2px 4px", width: "100%", background: "#fff" }}>
+                  {["On track","Order","Fail"].map(o => <option key={o}>{o}</option>)}
+                </select>
+              );
+              if (col.type === "agent") return (
+                <>
+                  <input autoFocus list="agent-options-table" value={editingValue}
+                    onChange={e => setEditingValue(e.target.value)}
+                    onBlur={commitEdit}
+                    onKeyDown={e => { if (e.key === "Enter") commitEdit(); if (e.key === "Escape") setEditingCell(null); }}
+                    style={{ fontSize: 12, border: "1px solid #6366f1", borderRadius: 4, padding: "2px 4px", width: "100%", boxSizing: "border-box" }} />
+                  <datalist id="agent-options-table">{agents.map(a => <option key={a} value={a} />)}</datalist>
+                </>
+              );
+              return (
+                <input autoFocus type={col.type === "number" ? "number" : "text"} value={editingValue}
+                  onChange={e => setEditingValue(e.target.value)}
+                  onBlur={commitEdit}
+                  onKeyDown={e => { if (e.key === "Enter") commitEdit(); if (e.key === "Escape") setEditingCell(null); }}
+                  style={{ fontSize: 12, border: "1px solid #6366f1", borderRadius: 4, padding: "2px 4px", width: "100%", boxSizing: "border-box" }} />
+              );
+            }
+
+            const displayVal = col.type === "number" && col.key === "total_price"
+              ? (val ? `฿${Number(val).toLocaleString()}` : "—")
+              : (val ?? "—");
+
+            return (
+              <span
+                onClick={() => { if (isSaving) return; setEditingCell({ id: row.qo_number, field: col.key }); setEditingValue(val ?? ""); }}
+                title="Click to edit"
+                style={{
+                  fontSize: 12, display: "block", cursor: "text", borderRadius: 4,
+                  padding: "2px 4px", margin: "-2px -4px",
+                  color: col.key === "stage" ? stageColor(val) : col.key === "sales_agent" ? getAgentColor(val, agents) : "#0f172a",
+                  fontWeight: col.key === "stage" || col.key === "sales_agent" ? 600 : 400,
+                  background: isSaving ? "#f1f5f9" : "transparent",
+                  transition: "background 0.15s",
+                }}
+                onMouseEnter={e => { if (!isSaving) e.currentTarget.style.background = "#f8fafc"; }}
+                onMouseLeave={e => { e.currentTarget.style.background = isSaving ? "#f1f5f9" : "transparent"; }}
+              >
+                {isSaving ? "⏳" : displayVal}
+              </span>
+            );
+          }
+
+          return (
+            <div>
+              {/* Search + pagination controls */}
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, flexWrap: "wrap", gap: 10 }}>
+                <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                  <input
+                    value={tableSearch} onChange={e => { setTableSearch(e.target.value); setTablePage(1); }}
+                    placeholder="Search by QO, company, agent, stage…"
+                    style={{ padding: "8px 12px", borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 13, fontFamily: "inherit", width: 260, color: "#0f172a", outline: "none" }}
+                  />
+                  <button onClick={handleCreateRow}
+                    style={{ padding: "8px 14px", borderRadius: 8, border: "none", background: "#2563eb", color: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}>
+                    + New Row
+                  </button>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ fontSize: 12, color: "#64748b" }}>{sorted.length} rows · Page {page} of {totalPages}</span>
+                  <button onClick={() => setTablePage(p => Math.max(1, p - 1))} disabled={page === 1}
+                    style={{ padding: "5px 10px", borderRadius: 6, border: "1px solid #e2e8f0", background: "#fff", cursor: page === 1 ? "not-allowed" : "pointer", fontSize: 12, color: page === 1 ? "#cbd5e1" : "#475569" }}>‹ Prev</button>
+                  <button onClick={() => setTablePage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}
+                    style={{ padding: "5px 10px", borderRadius: 6, border: "1px solid #e2e8f0", background: "#fff", cursor: page === totalPages ? "not-allowed" : "pointer", fontSize: 12, color: page === totalPages ? "#cbd5e1" : "#475569" }}>Next ›</button>
+                </div>
+              </div>
+
+              {/* Table */}
+              <div style={{ overflowX: "auto", borderRadius: 12, border: "1px solid #e2e8f0", background: "#fff" }}>
+                <table style={{ borderCollapse: "collapse", width: "100%", minWidth: TABLE_COLS.reduce((s, c) => s + c.width, 0) }}>
+                  <thead>
+                    <tr style={{ background: "#f8fafc", borderBottom: "1px solid #e2e8f0" }}>
+                      {TABLE_COLS.map(col => (
+                        <th key={col.key} onClick={() => toggleSort(col.key)}
+                          style={{ padding: "10px 12px", textAlign: "left", fontSize: 11, fontWeight: 600, color: tableSort.key === col.key ? "#2563eb" : "#475569", textTransform: "uppercase", letterSpacing: "0.4px", whiteSpace: "nowrap", width: col.width, cursor: "pointer", userSelect: "none" }}>
+                          {col.label}<SortIcon colKey={col.key} />
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pageRows.length === 0 ? (
+                      <tr><td colSpan={TABLE_COLS.length} style={{ padding: 32, textAlign: "center", color: "#94a3b8", fontSize: 13 }}>No results found</td></tr>
+                    ) : pageRows.map((row, i) => (
+                      <tr key={row.qo_number} style={{ borderBottom: "1px solid #f1f5f9", background: i % 2 === 0 ? "#fff" : "#fafbfc" }}>
+                        {TABLE_COLS.map(col => (
+                          <td key={col.key} style={{ padding: "8px 12px", maxWidth: col.width, overflow: "hidden" }}>
+                            <CellContent row={row} col={col} />
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div style={{ marginTop: 8, fontSize: 11, color: "#94a3b8" }}>💡 Click any cell to edit · Changes save instantly to Supabase</div>
+            </div>
+          );
+        })()}
       </div>
 
       <div style={{ textAlign: "center", padding: "16px", color: "#94a3b8", fontSize: 11 }}>
