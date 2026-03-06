@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, PieChart, Pie, Legend, LineChart, Line, CartesianGrid } from "recharts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import ExcelJS from "https://esm.sh/exceljs@4.4.0";
 
 // ─── Supabase config — replace with your values ────────────────────────────
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
@@ -175,7 +176,11 @@ function getYear(date) { return date.getFullYear(); }
 
 const GOAL = 30000000;
 const STAGE_COLORS = { Order: "#10b981", "On track": "#f59e0b", Fail: "#ef4444" };
-const AGENT_COLORS = { PATHINYA: "#6366f1", LALITA: "#ec4899", SARUN: "#14b8a6" };
+const AGENT_PALETTE = ["#6366f1","#ec4899","#14b8a6","#f59e0b","#10b981","#3b82f6","#8b5cf6","#ef4444","#06b6d4","#84cc16"];
+function getAgentColor(agent, agentList) {
+  const i = agentList.indexOf(agent);
+  return AGENT_PALETTE[i % AGENT_PALETTE.length];
+}
 
 // ── Dashboard (renamed from default export) ──────────────────────────────────
 function Dashboard({ session }) {
@@ -186,25 +191,27 @@ function Dashboard({ session }) {
   const [selectedYear, setSelectedYear] = useState(2026);
   const [selectedQ, setSelectedQ] = useState(1);
   const [activeTab, setActiveTab] = useState("overview");
+  const [uploadState, setUploadState] = useState("idle"); // idle | loading | success | error
+  const [uploadMessage, setUploadMessage] = useState("");
 
   useEffect(() => {
     async function fetchData() {
       try {
         const { data, error } = await supabase
           .from('sales_pipeline')
-          .select('"QO. Number","Company Name","Contact Person","Project Name","Total Price","Sales Agent","Stage","Create Date","Reason"')
+          .select('qo_number, company_name, contact_person, project_name, total_price, sales_agent, stage, create_date, reason')
           .order('id', { ascending: true });
         if (error) throw error;
         const mapped = data.map(r => ({
-          qo:      r['QO. Number']      ?? '',
-          company: r['Company Name']    ?? '',
-          contact: r['Contact Person']  ?? '',
-          project: r['Project Name']    ?? '',
-          price:   parseFloat(r['Total Price']) || 0,
-          agent:   r['Sales Agent']     ?? '',
-          stage:   r['Stage']           ?? '',
-          date:    r['Create Date']     ?? '',
-          reason:  r['Reason']          ?? '',
+          qo:      r.qo_number      ?? '',
+          company: r.company_name   ?? '',
+          contact: r.contact_person ?? '',
+          project: r.project_name   ?? '',
+          price:   parseFloat(r.total_price) || 0,
+          agent:   r.sales_agent    ?? '',
+          stage:   r.stage          ?? '',
+          date:    r.create_date    ?? '',
+          reason:  r.reason         ?? '',
         }));
         setRawData(mapped);
       } catch (err) {
@@ -252,9 +259,14 @@ function Dashboard({ session }) {
     { name: "Fail", value: stageCounts.Fail },
   ];
 
-  // Agent performance
+  // Derive unique agents from full dataset, sorted alphabetically
+  const agents = useMemo(() => {
+    const set = new Set(enriched.map(r => r.agent).filter(Boolean));
+    return [...set].sort();
+  }, [enriched]);
+
+  // Agent performance — only include agents with activity this quarter
   const agentData = useMemo(() => {
-    const agents = ["PATHINYA", "LALITA", "SARUN"];
     return agents.map(agent => {
       const rows = allForQ.filter(r => r.agent === agent);
       return {
@@ -264,8 +276,8 @@ function Dashboard({ session }) {
         Fail: rows.filter(r => r.stage === "Fail").length,
         orderRevenue: rows.filter(r => r.stage === "Order").reduce((s, r) => s + r.price, 0),
       };
-    });
-  }, [allForQ]);
+    }).filter(a => a.Order + a["On track"] + a.Fail > 0);
+  }, [agents, allForQ]);
 
   // Top 5 on-track by price
   const top5OnTrack = useMemo(() => {
@@ -298,6 +310,107 @@ function Dashboard({ session }) {
     { id: "pipeline", label: "Top Pipeline" },
     { id: "trend", label: "Monthly Trend" },
   ];
+
+  // ── Excel upload ─────────────────────────────────────────────────────────
+  async function extractQuotationData(buffer) {
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(buffer);
+    const sheet = workbook.worksheets[0];
+
+    function getCell(addr) {
+      let value = sheet.getCell(addr).value;
+      // ExcelJS returns formula cells as { formula, result } — use the result
+      if (value !== null && typeof value === "object" && "result" in value) value = value.result;
+      if (value === undefined || value === null || value === "")
+        throw new Error(`Missing required cell: ${addr}`);
+      return value;
+    }
+    function toISO(value) {
+      if (value instanceof Date) {
+        if (isNaN(value.getTime())) throw new Error(`Invalid date: ${value}`);
+        return value.toISOString().split("T")[0];
+      }
+      if (typeof value === "string") {
+        const parsed = new Date(value);
+        if (isNaN(parsed.getTime())) throw new Error(`Invalid date format: ${value}`);
+        return parsed.toISOString().split("T")[0];
+      }
+      if (typeof value === "number") {
+        // Excel serial date fallback
+        const epoch = new Date(1899, 11, 30);
+        epoch.setDate(epoch.getDate() + value);
+        return epoch.toISOString().split("T")[0];
+      }
+      throw new Error(`Unsupported date type: ${value}`);
+    }
+    function parseCurrency(value) {
+      // ExcelJS returns formula cells as { formula, result }
+      if (value !== null && typeof value === "object" && "result" in value) value = value.result;
+      if (typeof value === "number") return value;
+      if (typeof value === "string") {
+        const n = Number(value.replace(/,/g, "").trim());
+        if (isNaN(n)) throw new Error(`Invalid currency value: ${value}`);
+        return n;
+      }
+      throw new Error(`Unsupported currency format: ${value}`);
+    }
+
+    return {
+      qo_number:      String(getCell("K4")).trim(),
+      company_name:   String(getCell("B7")).trim(),
+      contact_person: String(getCell("B6")).trim(),
+      project_name:   String(getCell("B12")).trim(),
+      validity:       parseCurrency(getCell("I9")),
+      sales_agent:    String(getCell("F42")).trim(),
+      total_price:    parseCurrency(getCell("J35")),
+      create_date:    toISO(getCell("K5")),
+      stage:          "On track",
+      reason:         "",
+    };
+  }
+
+  async function handleUpload(e) {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // reset input so same file can be re-uploaded
+    if (!file) return;
+    setUploadState("loading");
+    setUploadMessage("");
+    try {
+      const buffer = await file.arrayBuffer();
+      const row = await extractQuotationData(buffer);
+      // Upsert based on qo_number to avoid duplicates
+      const { error } = await supabase
+        .from("sales_pipeline")
+        .upsert(row, { onConflict: "qo_number" });
+      if (error) throw error;
+      setUploadState("success");
+      setUploadMessage(`✓ ${row.qo_number} uploaded`);
+      // Refresh data
+      const { data, error: fetchErr } = await supabase
+        .from("sales_pipeline")
+        .select('qo_number, company_name, contact_person, project_name, total_price, sales_agent, stage, create_date, reason')
+        .order("id", { ascending: true });
+      if (!fetchErr) {
+        setRawData(data.map(r => ({
+          qo:      r.qo_number      ?? "",
+          company: r.company_name   ?? "",
+          contact: r.contact_person ?? "",
+          project: r.project_name   ?? "",
+          price:   parseFloat(r.total_price) || 0,
+          agent:   r.sales_agent    ?? "",
+          stage:   r.stage          ?? "",
+          date:    r.create_date    ?? "",
+          reason:  r.reason         ?? "",
+        })));
+      }
+      setTimeout(() => setUploadState("idle"), 3000);
+    } catch (err) {
+      console.error("Upload error:", err);
+      setUploadState("error");
+      setUploadMessage(err.message);
+      setTimeout(() => setUploadState("idle"), 5000);
+    }
+  }
 
   const quarterLabel = `Q${selectedQ} ${selectedYear}`;
 
@@ -396,6 +509,18 @@ function Dashboard({ session }) {
             {[1, 2, 3, 4].map(q => (
               <button key={q} className={`quarter-btn ${selectedQ === q ? "active" : ""}`} onClick={() => setSelectedQ(q)}>Q{q}</button>
             ))}
+            <label style={{
+              background: uploadState === "success" ? "#10b981" : uploadState === "error" ? "#ef4444" : uploadState === "loading" ? "#94a3b8" : "#2563eb",
+              color: "#fff", border: "none", borderRadius: 8, padding: "5px 12px",
+              fontSize: 12, fontWeight: 600, cursor: uploadState === "loading" ? "wait" : "pointer",
+              fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: 5, transition: "background 0.2s",
+            }}>
+              {uploadState === "loading" ? "⏳ Uploading…" : uploadState === "success" ? uploadMessage : uploadState === "error" ? "✕ Error" : "⬆ Upload QO"}
+              <input type="file" accept=".xlsx" onChange={handleUpload} style={{ display: "none" }} disabled={uploadState === "loading"} />
+            </label>
+            {uploadState === "error" && (
+              <span style={{ fontSize: 11, color: "#ef4444", maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={uploadMessage}>{uploadMessage}</span>
+            )}
             <button onClick={() => supabase.auth.signOut()} style={{ background: "none", border: "1px solid #e2e8f0", borderRadius: 8, padding: "5px 12px", fontSize: 12, color: "#94a3b8", cursor: "pointer", fontFamily: "inherit" }}>Sign out</button>
           </div>
         </div>
@@ -418,8 +543,8 @@ function Dashboard({ session }) {
             {/* Goal Progress */}
             <div className="card glow-green" style={{ marginBottom: 20 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
-                <div style={{marginBottom: "auto"}}>
-                  <div style={{ fontSize: 12, color: "#475569", fontWeight: 500, marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.5px"}}>Quarterly Revenue Goal · {quarterLabel}</div>
+                <div>
+                  <div style={{ fontSize: 12, color: "#475569", fontWeight: 500, marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.5px" }}>Quarterly Revenue Goal · {quarterLabel}</div>
                   <div style={{ fontSize: 14, color: "#64748b" }}>Target: {fmt(GOAL)}</div>
                 </div>
                 <div style={{ display: "flex", gap: 24, flexWrap: "wrap", justifyContent: "flex-end" }}>
@@ -499,7 +624,7 @@ function Dashboard({ session }) {
                     <YAxis tick={{ fill: "#64748b", fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={v => `${(v/1000000).toFixed(1)}M`} width={40} />
                     <Tooltip contentStyle={{ background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8, fontSize: 12 }} formatter={v => fmt(v)} />
                     <Bar dataKey="orderRevenue" name="Confirmed Revenue" radius={[4,4,0,0]}>
-                      {agentData.map((entry, i) => <Cell key={i} fill={AGENT_COLORS[entry.agent]} />)}
+                      {agentData.map((entry, i) => <Cell key={i} fill={getAgentColor(entry.agent, agents)} />)}
                     </Bar>
                   </BarChart>
                 </ResponsiveContainer>
@@ -513,10 +638,10 @@ function Dashboard({ session }) {
           <div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 16, marginBottom: 24 }}>
               {agentData.map(agent => (
-                <div key={agent.agent} className="card" style={{ borderTop: `3px solid ${AGENT_COLORS[agent.agent]}` }}>
+                <div key={agent.agent} className="card" style={{ borderTop: `3px solid ${getAgentColor(agent.agent, agents)}` }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
                     <div>
-                      <div style={{ fontSize: 16, fontWeight: 700, fontFamily: "'Space Grotesk', sans-serif", color: AGENT_COLORS[agent.agent] }}>{agent.agent}</div>
+                      <div style={{ fontSize: 16, fontWeight: 700, fontFamily: "'Space Grotesk', sans-serif", color: getAgentColor(agent.agent, agents) }}>{agent.agent}</div>
                       <div style={{ fontSize: 12, color: "#475569" }}>{agent.Order + agent["On track"] + agent.Fail} total quotations</div>
                     </div>
                     <div style={{ textAlign: "right" }}>
@@ -610,7 +735,7 @@ function Dashboard({ session }) {
                         <td style={{ padding: "10px 12px", color: "#64748b", fontFamily: "monospace", fontSize: 12 }}>{row.qo}</td>
                         <td style={{ padding: "10px 12px", color: "#0f172a", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row.company}</td>
                         <td style={{ padding: "10px 12px", color: "#64748b", maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row.project || "—"}</td>
-                        <td style={{ padding: "10px 12px" }}><span style={{ color: AGENT_COLORS[row.agent], fontWeight: 500 }}>{row.agent}</span></td>
+                        <td style={{ padding: "10px 12px" }}><span style={{ color: getAgentColor(row.agent, agents), fontWeight: 500 }}>{row.agent}</span></td>
                         <td style={{ padding: "10px 12px", fontWeight: 600, color: "#f59e0b" }}>{fmt(row.price)}</td>
                         <td style={{ padding: "10px 12px", color: "#94a3b8", fontSize: 12 }}>{row.date || "—"}</td>
                       </tr>
