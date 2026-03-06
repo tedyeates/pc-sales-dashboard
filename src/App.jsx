@@ -132,14 +132,20 @@ export default function Dashboard() {
         ::-webkit-scrollbar { width: 6px; }
         ::-webkit-scrollbar-track { background: #e2e8f0; }
         ::-webkit-scrollbar-thumb { background: #94a3b8; border-radius: 3px; }
-        .tab-btn { background: none; border: none; cursor: pointer; padding: 8px 20px; border-radius: 8px; font-family: inherit; font-size: 13px; font-weight: 500; transition: all 0.2s; }
+
+        .tab-btn { background: none; border: none; cursor: pointer; padding: 8px 14px; border-radius: 8px; font-family: inherit; font-size: 13px; font-weight: 500; transition: all 0.2s; white-space: nowrap; }
         .tab-btn.active { background: #2563eb; color: white; }
         .tab-btn:not(.active) { color: #64748b; }
         .tab-btn:not(.active):hover { background: #e2e8f0; color: #0f172a; }
+
+        .tab-bar { display: flex; gap: 4px; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+        .tab-bar::-webkit-scrollbar { display: none; }
+
         .filter-select { background: #ffffff; border: 1px solid #cbd5e1; color: #0f172a; padding: 6px 12px; border-radius: 8px; font-family: inherit; font-size: 13px; cursor: pointer; }
         .filter-select:focus { outline: none; border-color: #3b82f6; }
+
         .card { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 20px; }
-        .kpi-card { background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%); border: 1px solid #e2e8f0; border-radius: 16px; padding: 20px; }
+        .kpi-card { background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%); border: 1px solid #e2e8f0; border-radius: 16px; padding: 16px; }
         .progress-bar-bg { background: #e2e8f0; border-radius: 99px; height: 12px; overflow: hidden; }
         .progress-bar-fill { height: 100%; border-radius: 99px; transition: width 1s ease; background: linear-gradient(90deg, #1d4ed8, #3b82f6, #60a5fa); }
         .badge { display: inline-block; padding: 2px 10px; border-radius: 99px; font-size: 11px; font-weight: 600; }
@@ -149,38 +155,63 @@ export default function Dashboard() {
         .table-row:hover { background: #f8fafc; }
         .glow-green { box-shadow: 0 2px 12px rgba(16,185,129,0.15); }
         .glow-amber { box-shadow: 0 0 20px rgba(245,158,11,0.1); }
-        .quarter-btn { background: none; border: 1px solid #cbd5e1; color: #64748b; padding: 5px 14px; border-radius: 8px; font-family: inherit; font-size: 13px; cursor: pointer; transition: all 0.2s; }
+
+        .quarter-btn { background: none; border: 1px solid #cbd5e1; color: #64748b; padding: 5px 12px; border-radius: 8px; font-family: inherit; font-size: 13px; cursor: pointer; transition: all 0.2s; }
         .quarter-btn.active { background: #2563eb; border-color: #2563eb; color: white; }
         .quarter-btn:hover:not(.active) { border-color: #94a3b8; color: #0f172a; }
+
+        .header-inner { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding: 20px 32px; }
+        .header-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+        .page-pad { padding: 24px 32px; }
+        .chart-grid-2 { display: grid; grid-template-columns: 1fr 2fr; gap: 16px; }
+        .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 20px; }
+
+        @media (max-width: 640px) {
+          .header-inner { padding: 16px; flex-direction: column; align-items: flex-start; }
+          .header-controls { width: 100%; justify-content: flex-start; }
+          .page-pad { padding: 16px; }
+          .chart-grid-2 { grid-template-columns: 1fr; }
+          .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+          .card { padding: 16px; border-radius: 12px; }
+          .tab-bar { padding: 12px 16px 0; }
+          .goal-amount { font-size: 22px !important; }
+          .goal-pct { font-size: 24px !important; }
+          .top5-price { font-size: 13px !important; }
+          .agent-revenue { font-size: 13px !important; }
+        }
       `}</style>
 
       {/* Header */}
-      <div style={{ background: "linear-gradient(180deg, #ffffff 0%, #f8fafc 100%)", borderBottom: "1px solid #e2e8f0", padding: "20px 32px", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
-        <div>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 2 }}>
-            <div style={{ width: 32, height: 32, borderRadius: 8, background: "linear-gradient(135deg, #1d4ed8, #7c3aed)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>⚡</div>
-            <h1 style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 20, fontWeight: 700, color: "#0f172a", letterSpacing: "-0.3px" }}>PC Sales Pipeline</h1>
+      <div style={{ background: "linear-gradient(180deg, #ffffff 0%, #f8fafc 100%)", borderBottom: "1px solid #e2e8f0" }}>
+        <div className="header-inner">
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 2 }}>
+              <div style={{ width: 32, height: 32, borderRadius: 8, background: "linear-gradient(135deg, #1d4ed8, #7c3aed)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>⚡</div>
+              <h1 style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 20, fontWeight: 700, color: "#0f172a", letterSpacing: "-0.3px" }}>PC Sales Pipeline</h1>
+            </div>
+            <p style={{ fontSize: 12, color: "#64748b" }}>Revenue tracking dashboard · Quarterly target: ฿30,000,000</p>
           </div>
-          <p style={{ fontSize: 12, color: "#64748b" }}>Revenue tracking dashboard · Quarterly target: ฿30,000,000</p>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <select className="filter-select" value={selectedYear} onChange={e => setSelectedYear(Number(e.target.value))}>
-            {years.map(y => <option key={y} value={y}>{y}</option>)}
-          </select>
-          {[1, 2, 3, 4].map(q => (
-            <button key={q} className={`quarter-btn ${selectedQ === q ? "active" : ""}`} onClick={() => setSelectedQ(q)}>Q{q}</button>
-          ))}
+          <div className="header-controls">
+            <select className="filter-select" value={selectedYear} onChange={e => setSelectedYear(Number(e.target.value))}>
+              {years.map(y => <option key={y} value={y}>{y}</option>)}
+            </select>
+            {[1, 2, 3, 4].map(q => (
+              <button key={q} className={`quarter-btn ${selectedQ === q ? "active" : ""}`} onClick={() => setSelectedQ(q)}>Q{q}</button>
+            ))}
+          </div>
         </div>
       </div>
 
       {/* Tabs */}
-      <div style={{ padding: "16px 32px 0", display: "flex", gap: 4, borderBottom: "1px solid #e2e8f0" }}>
-        {tabs.map(t => (
-          <button key={t.id} className={`tab-btn ${activeTab === t.id ? "active" : ""}`} onClick={() => setActiveTab(t.id)}>{t.label}</button>
-        ))}
+      <div style={{ borderBottom: "1px solid #e2e8f0", background: "#ffffff" }}>
+        <div className="tab-bar" style={{ padding: "12px 32px 0" }}>
+          {tabs.map(t => (
+            <button key={t.id} className={`tab-btn ${activeTab === t.id ? "active" : ""}`} onClick={() => setActiveTab(t.id)}>{t.label}</button>
+          ))}
+        </div>
       </div>
 
-      <div style={{ padding: "24px 32px" }}>
+      <div className="page-pad">
 
         {/* OVERVIEW TAB */}
         {activeTab === "overview" && (
@@ -190,10 +221,10 @@ export default function Dashboard() {
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16, flexWrap: "wrap", gap: 8 }}>
                 <div>
                   <div style={{ fontSize: 12, color: "#475569", fontWeight: 500, marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.5px" }}>Quarterly Revenue Goal · {quarterLabel}</div>
-                  <div style={{ fontSize: 28, fontWeight: 700, fontFamily: "'Space Grotesk', sans-serif", color: "#0f172a" }}>{fmt(combinedTotal)} <span style={{ fontSize: 16, color: "#64748b", fontWeight: 400 }}>/ {fmt(GOAL)}</span></div>
+                  <div style={{ fontSize: 28, fontWeight: 700, fontFamily: "'Space Grotesk', sans-serif", color: "#0f172a" }} className="goal-amount">{fmt(combinedTotal)} <span style={{ fontSize: 16, color: "#64748b", fontWeight: 400 }}>/ {fmt(GOAL)}</span></div>
                 </div>
                 <div style={{ textAlign: "right" }}>
-                  <div style={{ fontSize: 32, fontWeight: 700, fontFamily: "'Space Grotesk', sans-serif", color: progress >= 100 ? "#10b981" : progress > 60 ? "#f59e0b" : "#ef4444" }}>{progress.toFixed(1)}%</div>
+                  <div style={{ fontSize: 32, fontWeight: 700, fontFamily: "'Space Grotesk', sans-serif", color: progress >= 100 ? "#10b981" : progress > 60 ? "#f59e0b" : "#ef4444" }} className="goal-pct">{progress.toFixed(1)}%</div>
                   <div style={{ fontSize: 12, color: "#64748b" }}>{progress >= 100 ? "🎯 Goal achieved!" : `฿${fmt(GOAL - combinedTotal)} remaining`}</div>
                 </div>
               </div>
@@ -211,7 +242,7 @@ export default function Dashboard() {
             </div>
 
             {/* KPI Cards */}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 16, marginBottom: 20 }}>
+            <div className="kpi-grid">
               {[
                 { label: "Total Quotations", value: allForQ.length, sub: "All statuses", icon: "📋", color: "#3b82f6" },
                 { label: "Orders Confirmed", value: stageCounts.Order, sub: `${fmt(orderTotal)}`, icon: "✅", color: "#10b981" },
@@ -233,12 +264,12 @@ export default function Dashboard() {
             </div>
 
             {/* Stage Pie + Agent Overview */}
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: 16 }}>
+            <div className="chart-grid-2">
               <div className="card">
                 <div style={{ fontSize: 13, fontWeight: 600, color: "#64748b", marginBottom: 16, textTransform: "uppercase", letterSpacing: "0.5px" }}>Status Distribution</div>
-                <ResponsiveContainer width="100%" height={200}>
+                <ResponsiveContainer width="100%" height={180}>
                   <PieChart>
-                    <Pie data={stagePieData} cx="50%" cy="50%" innerRadius={50} outerRadius={80} dataKey="value" paddingAngle={3}>
+                    <Pie data={stagePieData} cx="50%" cy="50%" innerRadius={45} outerRadius={70} dataKey="value" paddingAngle={3}>
                       {stagePieData.map((entry, index) => (
                         <Cell key={index} fill={STAGE_COLORS[entry.name]} />
                       ))}
@@ -250,11 +281,11 @@ export default function Dashboard() {
               </div>
               <div className="card">
                 <div style={{ fontSize: 13, fontWeight: 600, color: "#64748b", marginBottom: 16, textTransform: "uppercase", letterSpacing: "0.5px" }}>Agent Revenue Breakdown</div>
-                <ResponsiveContainer width="100%" height={200}>
+                <ResponsiveContainer width="100%" height={180}>
                   <BarChart data={agentData} barCategoryGap="30%">
-                    <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
                     <XAxis dataKey="agent" tick={{ fill: "#64748b", fontSize: 12 }} axisLine={false} tickLine={false} />
-                    <YAxis tick={{ fill: "#64748b", fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={v => `${(v/1000000).toFixed(1)}M`} />
+                    <YAxis tick={{ fill: "#64748b", fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={v => `${(v/1000000).toFixed(1)}M`} width={40} />
                     <Tooltip contentStyle={{ background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8, fontSize: 12 }} formatter={v => fmt(v)} />
                     <Bar dataKey="orderRevenue" name="Confirmed Revenue" radius={[4,4,0,0]}>
                       {agentData.map((entry, i) => <Cell key={i} fill={AGENT_COLORS[entry.agent]} />)}
@@ -307,11 +338,11 @@ export default function Dashboard() {
 
             <div className="card">
               <div style={{ fontSize: 13, fontWeight: 600, color: "#64748b", marginBottom: 16, textTransform: "uppercase", letterSpacing: "0.5px" }}>Orders by Agent — Count Comparison</div>
-              <ResponsiveContainer width="100%" height={260}>
+              <ResponsiveContainer width="100%" height={220}>
                 <BarChart data={agentData} barCategoryGap="35%">
-                  <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
                   <XAxis dataKey="agent" tick={{ fill: "#64748b", fontSize: 12 }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fill: "#64748b", fontSize: 11 }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fill: "#64748b", fontSize: 11 }} axisLine={false} tickLine={false} width={30} />
                   <Tooltip contentStyle={{ background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8, fontSize: 12 }} />
                   <Legend wrapperStyle={{ fontSize: 12 }} />
                   <Bar dataKey="Order" fill="#10b981" radius={[3,3,0,0]} />
@@ -385,11 +416,11 @@ export default function Dashboard() {
           <div>
             <div className="card" style={{ marginBottom: 16 }}>
               <div style={{ fontSize: 13, fontWeight: 600, color: "#64748b", marginBottom: 16, textTransform: "uppercase", letterSpacing: "0.5px" }}>Monthly Revenue Breakdown · {quarterLabel} (฿M)</div>
-              <ResponsiveContainer width="100%" height={300}>
+              <ResponsiveContainer width="100%" height={250}>
                 <BarChart data={monthlyData} barCategoryGap="35%">
-                  <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
                   <XAxis dataKey="month" tick={{ fill: "#64748b", fontSize: 13 }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fill: "#64748b", fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={v => `฿${v.toFixed(1)}M`} />
+                  <YAxis tick={{ fill: "#64748b", fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={v => `฿${v.toFixed(1)}M`} width={50} />
                   <Tooltip contentStyle={{ background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8, fontSize: 12 }} formatter={(v) => [`฿${(v).toFixed(2)}M`]} />
                   <Legend wrapperStyle={{ fontSize: 12 }} />
                   <Bar dataKey="Order" fill="#10b981" radius={[4,4,0,0]} name="Orders" />
