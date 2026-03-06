@@ -182,6 +182,108 @@ function getAgentColor(agent, agentList) {
   return AGENT_PALETTE[i % AGENT_PALETTE.length];
 }
 
+// ── Review Modal ──────────────────────────────────────────────────────────────
+const FIELDS = [
+  { key: "qo_number",      label: "QO Number",      type: "text" },
+  { key: "company_name",   label: "Company Name",   type: "text" },
+  { key: "contact_person", label: "Contact Person", type: "text" },
+  { key: "project_name",   label: "Project Name",   type: "text" },
+  { key: "total_price",    label: "Total Price",    type: "number" },
+  { key: "validity",       label: "Validity (days)",type: "number" },
+  { key: "sales_agent",    label: "Sales Agent",    type: "select", options: [] }, // options populated from agents prop
+  { key: "stage",          label: "Stage",          type: "select", options: ["On track", "Order", "Fail"] },
+  { key: "create_date",    label: "Create Date",    type: "date" },
+  { key: "reason",         label: "Reason",         type: "text" },
+  { key: "po_qt",          label: "PO / QT",        type: "text" },
+  { key: "follow_up_1",    label: "Follow Up 1",    type: "text" },
+  { key: "follow_up_2",    label: "Follow Up 2",    type: "text" },
+  { key: "follow_up_3",    label: "Follow Up 3",    type: "text" },
+];
+
+function ReviewModal({ row, agents, onSave, onCancel }) {
+  const [form, setForm] = useState({ ...row });
+  const set = (key, val) => setForm(f => ({ ...f, [key]: val }));
+
+  const overlayStyle = {
+    position: "fixed", inset: 0, background: "rgba(15,23,42,0.5)",
+    display: "flex", alignItems: "center", justifyContent: "center",
+    zIndex: 1000, padding: 16,
+  };
+  const modalStyle = {
+    background: "#fff", borderRadius: 16, width: "100%", maxWidth: 560,
+    maxHeight: "90vh", display: "flex", flexDirection: "column",
+    boxShadow: "0 24px 64px rgba(0,0,0,0.18)",
+  };
+  const headerStyle = {
+    padding: "20px 24px 16px", borderBottom: "1px solid #e2e8f0",
+    display: "flex", alignItems: "center", justifyContent: "space-between",
+  };
+  const bodyStyle = { padding: "20px 24px", overflowY: "auto", flex: 1 };
+  const footerStyle = {
+    padding: "16px 24px", borderTop: "1px solid #e2e8f0",
+    display: "flex", gap: 10, justifyContent: "flex-end",
+  };
+  const fieldStyle = { marginBottom: 14 };
+  const labelStyle2 = { fontSize: 11, fontWeight: 600, color: "#475569", textTransform: "uppercase", letterSpacing: "0.4px", display: "block", marginBottom: 4 };
+  const inputStyle2 = { width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid #cbd5e1", fontSize: 13, fontFamily: "inherit", boxSizing: "border-box", color: "#0f172a" };
+
+  return (
+    <div style={overlayStyle} onClick={e => e.target === e.currentTarget && onCancel()}>
+      <div style={modalStyle}>
+        <div style={headerStyle}>
+          <div>
+            <div style={{ fontWeight: 700, fontSize: 16, color: "#0f172a" }}>Review Quotation</div>
+            <div style={{ fontSize: 12, color: "#64748b", marginTop: 2 }}>Check and edit before saving to Supabase</div>
+          </div>
+          <button onClick={onCancel} style={{ background: "none", border: "none", fontSize: 20, cursor: "pointer", color: "#94a3b8", lineHeight: 1 }}>✕</button>
+        </div>
+
+        <div style={bodyStyle}>
+          {FIELDS.map(({ key, label, type, options }) => (
+            <div key={key} style={fieldStyle}>
+              <label style={labelStyle2}>{label}</label>
+              {key === "sales_agent" ? (
+                <>
+                  <input
+                    list="agent-options"
+                    value={form[key] ?? ""}
+                    onChange={e => set(key, e.target.value)}
+                    placeholder="Select or type new agent…"
+                    style={inputStyle2}
+                  />
+                  <datalist id="agent-options">
+                    {agents.map(a => <option key={a} value={a} />)}
+                  </datalist>
+                </>
+              ) : type === "select" ? (
+                <select value={form[key] ?? ""} onChange={e => set(key, e.target.value)} style={inputStyle2}>
+                  {options.map(o => <option key={o} value={o}>{o}</option>)}
+                </select>
+              ) : (
+                <input
+                  type={type}
+                  value={form[key] ?? ""}
+                  onChange={e => set(key, type === "number" ? parseFloat(e.target.value) || 0 : e.target.value)}
+                  style={inputStyle2}
+                />
+              )}
+            </div>
+          ))}
+        </div>
+
+        <div style={footerStyle}>
+          <button onClick={onCancel} style={{ padding: "9px 18px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", fontSize: 13, fontWeight: 500, cursor: "pointer", color: "#475569" }}>
+            Cancel
+          </button>
+          <button onClick={() => onSave(form)} style={{ padding: "9px 18px", borderRadius: 8, border: "none", background: "#2563eb", color: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+            Save to Supabase
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Dashboard (renamed from default export) ──────────────────────────────────
 function Dashboard({ session }) {
 
@@ -193,13 +295,14 @@ function Dashboard({ session }) {
   const [activeTab, setActiveTab] = useState("overview");
   const [uploadState, setUploadState] = useState("idle"); // idle | loading | success | error
   const [uploadMessage, setUploadMessage] = useState("");
+  const [reviewRow, setReviewRow] = useState(null); // null = modal closed
 
   useEffect(() => {
     async function fetchData() {
       try {
         const { data, error } = await supabase
           .from('sales_pipeline')
-          .select('qo_number, company_name, contact_person, project_name, total_price, sales_agent, stage, create_date, reason')
+          .select('qo_number, company_name, contact_person, project_name, total_price, validity, sales_agent, stage, create_date, reason, po_qt, follow_up_1, follow_up_2, follow_up_3')
           .order('id', { ascending: true });
         if (error) throw error;
         const mapped = data.map(r => ({
@@ -369,43 +472,61 @@ function Dashboard({ session }) {
     };
   }
 
+  async function refreshData() {
+    const { data, error: fetchErr } = await supabase
+      .from("sales_pipeline")
+      .select('qo_number, company_name, contact_person, project_name, total_price, validity, sales_agent, stage, create_date, reason, po_qt, follow_up_1, follow_up_2, follow_up_3')
+      .order("id", { ascending: true });
+    if (!fetchErr) {
+      setRawData(data.map(r => ({
+        qo:      r.qo_number      ?? "",
+        company: r.company_name   ?? "",
+        contact: r.contact_person ?? "",
+        project: r.project_name   ?? "",
+        price:   parseFloat(r.total_price) || 0,
+        agent:   r.sales_agent    ?? "",
+        stage:   r.stage          ?? "",
+        date:    r.create_date    ?? "",
+        reason:  r.reason         ?? "",
+      })));
+    }
+  }
+
   async function handleUpload(e) {
     const file = e.target.files?.[0];
-    e.target.value = ""; // reset input so same file can be re-uploaded
+    e.target.value = "";
     if (!file) return;
     setUploadState("loading");
     setUploadMessage("");
     try {
       const buffer = await file.arrayBuffer();
       const row = await extractQuotationData(buffer);
-      // Upsert based on qo_number to avoid duplicates
+      // Add extra fields with defaults so user can fill them in
+      const fullRow = { ...row, po_qt: "", follow_up_1: "", follow_up_2: "", follow_up_3: "" };
+      setReviewRow(fullRow);
+      setUploadState("idle");
+    } catch (err) {
+      console.error("Upload error:", err);
+      setUploadState("error");
+      setUploadMessage(err.message);
+      setTimeout(() => setUploadState("idle"), 5000);
+    }
+  }
+
+  async function handleConfirmSave(row) {
+    setReviewRow(null);
+    setUploadState("loading");
+    try {
       const { error } = await supabase
         .from("sales_pipeline")
         .upsert(row, { onConflict: "qo_number" });
       if (error) throw error;
       setUploadState("success");
-      setUploadMessage(`✓ ${row.qo_number} uploaded`);
-      // Refresh data
-      const { data, error: fetchErr } = await supabase
-        .from("sales_pipeline")
-        .select('qo_number, company_name, contact_person, project_name, total_price, sales_agent, stage, create_date, reason')
-        .order("id", { ascending: true });
-      if (!fetchErr) {
-        setRawData(data.map(r => ({
-          qo:      r.qo_number      ?? "",
-          company: r.company_name   ?? "",
-          contact: r.contact_person ?? "",
-          project: r.project_name   ?? "",
-          price:   parseFloat(r.total_price) || 0,
-          agent:   r.sales_agent    ?? "",
-          stage:   r.stage          ?? "",
-          date:    r.create_date    ?? "",
-          reason:  r.reason         ?? "",
-        })));
-      }
+      setUploadMessage(`✓ ${row.qo_number} saved`);
+      await refreshData();
       setTimeout(() => setUploadState("idle"), 3000);
     } catch (err) {
-      console.error("Upload error:", err);
+      console.error("Save error:", err);
       setUploadState("error");
       setUploadMessage(err.message);
       setTimeout(() => setUploadState("idle"), 5000);
@@ -798,6 +919,16 @@ function Dashboard({ session }) {
       <div style={{ textAlign: "center", padding: "16px", color: "#94a3b8", fontSize: 11 }}>
         PC Sales Pipeline Dashboard · Data from Q1–Q3 2026 · {RAW_DATA.length} records (live from Supabase)
       </div>
+
+      {/* ── Review & Edit Modal ─────────────────────────────────────────── */}
+      {reviewRow && (
+        <ReviewModal
+          row={reviewRow}
+          agents={agents}
+          onSave={handleConfirmSave}
+          onCancel={() => { setReviewRow(null); setUploadState("idle"); }}
+        />
+      )}
     </div>
   );
 }
