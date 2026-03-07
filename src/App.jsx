@@ -364,6 +364,10 @@ function Dashboard({ session }) {
     allForQ.filter(r => r.stage === "On track").reduce((s, r) => s + r.price, 0),
   [allForQ]);
 
+  const failedTotal = useMemo(() =>
+    allForQ.filter(r => r.stage === "Fail").reduce((s, r) => s + r.price, 0),
+  [allForQ]);
+
   const combinedTotal = orderTotal + onTrackTotal;
   const progress = Math.min((combinedTotal / GOAL) * 100, 100);
 
@@ -759,7 +763,7 @@ function Dashboard({ session }) {
                 { label: "Total Quotations", value: allForQ.length, sub: "All statuses", icon: "📋", color: "#3b82f6" },
                 { label: "Orders Confirmed", value: stageCounts.Order, sub: `${fmt(orderTotal)}`, icon: "✅", color: "#10b981" },
                 { label: "In Progress", value: stageCounts["On track"], sub: `${fmt(onTrackTotal)} potential`, icon: "🔄", color: "#f59e0b" },
-                { label: "Failed", value: stageCounts.Fail, sub: "Excluded from total", icon: "❌", color: "#ef4444" },
+                { label: "Failed", value: stageCounts.Fail, sub: `${fmt(failedTotal)} lost`, icon: "❌", color: "#ef4444" },
                 { label: "Win Rate", value: `${stageCounts.Order + stageCounts["On track"] + stageCounts.Fail > 0 ? ((stageCounts.Order / (stageCounts.Order + stageCounts.Fail)) * 100).toFixed(0) : 0}%`, sub: "Orders vs closed deals", icon: "🎯", color: "#8b5cf6" },
               ].map((kpi, i) => (
                 <div key={i} className="kpi-card" style={{ borderLeft: `3px solid ${kpi.color}` }}>
