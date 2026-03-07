@@ -215,6 +215,7 @@ const FIELDS = [
   { key: "contact_person", label: "Contact Person", type: "text" },
   { key: "project_name",   label: "Project Name",   type: "text" },
   { key: "total_price",    label: "Total Price",    type: "number" },
+  { key: "revision",       label: "Revision",       type: "number" },
   { key: "validity",       label: "Validity (days)",type: "number" },
   { key: "sales_agent",    label: "Sales Agent",    type: "select", options: [] }, // options populated from agents prop
   { key: "stage",          label: "Stage",          type: "select", options: ["On track", "Order", "Fail"] },
@@ -223,7 +224,7 @@ const FIELDS = [
   { key: "po_qt",          label: "PO / QT",        type: "text" },
   { key: "follow_up_1",    label: "Follow Up 1",    type: "text" },
   { key: "follow_up_2",    label: "Follow Up 2",    type: "text" },
-  { key: "follow_up_3",    label: "Follow Up 3",    type: "text" },
+  { key: "follow_up_3",    label: "Follow Up 3",    type: "text" }
 ];
 
 function ReviewModal({ row, agents, onSave, onCancel }) {
@@ -334,7 +335,7 @@ function Dashboard({ session }) {
       try {
         const { data, error } = await supabase
           .from('sales_pipeline')
-          .select('qo_number, company_name, contact_person, project_name, total_price, validity, sales_agent, stage, create_date, reason, po_qt, follow_up_1, follow_up_2, follow_up_3')
+          .select('qo_number, company_name, contact_person, project_name, total_price, validity, sales_agent, stage, create_date, reason, po_qt, follow_up_1, follow_up_2, follow_up_3, revision')
           .order('id', { ascending: true });
         if (error) throw error;
         const mapped = data.map(r => ({
@@ -352,6 +353,7 @@ function Dashboard({ session }) {
           follow_up_1: r.follow_up_1 ?? '',
           follow_up_2: r.follow_up_2 ?? '',
           follow_up_3: r.follow_up_3 ?? '',
+          revision:    r.revision    ?? 0,
         }));
         setRawData(mapped);
       } catch (err) {
@@ -527,7 +529,7 @@ function Dashboard({ session }) {
   async function refreshData() {
     const { data, error: fetchErr } = await supabase
       .from("sales_pipeline")
-      .select('qo_number, company_name, contact_person, project_name, total_price, validity, sales_agent, stage, create_date, reason, po_qt, follow_up_1, follow_up_2, follow_up_3')
+      .select('qo_number, company_name, contact_person, project_name, total_price, validity, sales_agent, stage, create_date, reason, po_qt, follow_up_1, follow_up_2, follow_up_3, revision')
       .order("id", { ascending: true });
     if (!fetchErr) {
       setRawData(data.map(r => ({
@@ -545,6 +547,7 @@ function Dashboard({ session }) {
         follow_up_1: r.follow_up_1    ?? "",
         follow_up_2: r.follow_up_2    ?? "",
         follow_up_3: r.follow_up_3    ?? "",
+        revision:    r.revision       ?? 0,
       })));
     }
   }
@@ -559,7 +562,7 @@ function Dashboard({ session }) {
       const buffer = await file.arrayBuffer();
       const row = await extractQuotationData(buffer);
       // Add extra fields with defaults so user can fill them in
-      const fullRow = { ...row, po_qt: "", follow_up_1: "", follow_up_2: "", follow_up_3: "" };
+      const fullRow = { ...row, po_qt: "", follow_up_1: "", follow_up_2: "", follow_up_3: "", revision: 0 };
       setReviewRow(fullRow);
       setUploadState("idle");
     } catch (err) {
@@ -607,6 +610,7 @@ function Dashboard({ session }) {
       follow_up_1:    "",
       follow_up_2:    "",
       follow_up_3:    "",
+      revision:       0,
     };
     setReviewRow(newRow);
   }
@@ -1050,6 +1054,7 @@ function Dashboard({ session }) {
             { key: "contact_person", label: "Contact",      width: 150, editable: true,  type: "text" },
             { key: "project_name",   label: "Project",      width: 200, editable: true,  type: "text" },
             { key: "total_price",    label: "Price (฿)",    width: 110, editable: true,  type: "number" },
+            { key: "revision",       label: "Revision",     width: 80,  editable: true,  type: "number" },
             { key: "sales_agent",    label: "Agent",        width: 110, editable: true,  type: "agent" },
             { key: "stage",          label: "Stage",        width: 100, editable: true,  type: "stage" },
             { key: "po_qt",          label: "PO/QT",        width: 90,  editable: true,  type: "text" },
@@ -1075,6 +1080,7 @@ function Dashboard({ session }) {
             follow_up_1:    r.follow_up_1 ?? "",
             follow_up_2:    r.follow_up_2 ?? "",
             follow_up_3:    r.follow_up_3 ?? "",
+            revision:       r.revision    ?? 0,
           })).filter(r => {
             if (!tableSearch.trim()) return true;
             const q = tableSearch.toLowerCase();
