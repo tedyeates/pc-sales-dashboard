@@ -298,7 +298,7 @@ function Dashboard({ session }) {
   const [reviewRow, setReviewRow] = useState(null); // null = modal closed
   const [tablePage, setTablePage] = useState(1);
   const [tableSearch, setTableSearch] = useState("");
-  const [tableSort, setTableSort] = useState({ key: "create_date", dir: "desc" });
+  const [tableSort, setTableSort] = useState([]); // array of { key, dir: 'asc'|'desc' }
   const [editingCell, setEditingCell] = useState(null); // { id, field }
   const [editingValue, setEditingValue] = useState("");
   const [savingCell, setSavingCell] = useState(null);
@@ -1063,30 +1063,45 @@ function Dashboard({ session }) {
           });
 
           const sorted = [...filtered].sort((a, b) => {
-            const { key, dir } = tableSort;
-            const av = a[key] ?? "";
-            const bv = b[key] ?? "";
-            let cmp = 0;
-            if (key === "total_price" || key === "validity") {
-              cmp = (parseFloat(av) || 0) - (parseFloat(bv) || 0);
-            } else {
-              cmp = String(av).localeCompare(String(bv));
+            for (const { key, dir } of tableSort) {
+              const av = a[key] ?? "";
+              const bv = b[key] ?? "";
+              let cmp = 0;
+              if (key === "total_price" || key === "validity") {
+                cmp = (parseFloat(av) || 0) - (parseFloat(bv) || 0);
+              } else {
+                cmp = String(av).localeCompare(String(bv));
+              }
+              if (cmp !== 0) return dir === "asc" ? cmp : -cmp;
             }
-            return dir === "asc" ? cmp : -cmp;
+            return 0;
           });
 
           const totalPages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
           const page = Math.min(tablePage, totalPages);
           const pageRows = sorted.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
+          // Cycle: none → asc → desc → none
           const toggleSort = key => {
-            setTableSort(s => ({ key, dir: s.key === key && s.dir === "asc" ? "desc" : "asc" }));
+            setTableSort(prev => {
+              const existing = prev.find(s => s.key === key);
+              if (!existing) return [...prev, { key, dir: "asc" }];
+              if (existing.dir === "asc") return prev.map(s => s.key === key ? { key, dir: "desc" } : s);
+              return prev.filter(s => s.key !== key); // remove = no sort
+            });
             setTablePage(1);
           };
 
           const SortIcon = ({ colKey }) => {
-            if (tableSort.key !== colKey) return <span style={{ opacity: 0.3, marginLeft: 4 }}>↕</span>;
-            return <span style={{ marginLeft: 4, color: "#2563eb" }}>{tableSort.dir === "asc" ? "↑" : "↓"}</span>;
+            const entry = tableSort.find(s => s.key === colKey);
+            const priority = tableSort.findIndex(s => s.key === colKey) + 1;
+            if (!entry) return <span style={{ opacity: 0.2, marginLeft: 4, fontSize: 10 }}>↕</span>;
+            return (
+              <span style={{ marginLeft: 4, color: "#2563eb", fontSize: 10, fontWeight: 700 }}>
+                {entry.dir === "asc" ? "↑" : "↓"}
+                {tableSort.length > 1 && <sup style={{ fontSize: 8 }}>{priority}</sup>}
+              </span>
+            );
           };
 
           const stageColor = s => s === "Order" ? "#10b981" : s === "On track" ? "#f59e0b" : s === "Fail" ? "#ef4444" : "#94a3b8";
@@ -1174,6 +1189,12 @@ function Dashboard({ session }) {
                     style={{ padding: "8px 14px", borderRadius: 8, border: "none", background: "#2563eb", color: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}>
                     + New Row
                   </button>
+                  {tableSort.length > 0 && (
+                    <button onClick={() => setTableSort([])}
+                      style={{ padding: "8px 12px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", fontSize: 12, color: "#64748b", cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}>
+                      ✕ Clear sort ({tableSort.length})
+                    </button>
+                  )}
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   <span style={{ fontSize: 12, color: "#64748b" }}>{sorted.length} rows · Page {page} of {totalPages}</span>
@@ -1191,7 +1212,7 @@ function Dashboard({ session }) {
                     <tr style={{ background: "#f8fafc", borderBottom: "1px solid #e2e8f0" }}>
                       {TABLE_COLS.map(col => (
                         <th key={col.key} onClick={() => toggleSort(col.key)}
-                          style={{ padding: "10px 12px", textAlign: "left", fontSize: 11, fontWeight: 600, color: tableSort.key === col.key ? "#2563eb" : "#475569", textTransform: "uppercase", letterSpacing: "0.4px", whiteSpace: "nowrap", width: col.width, cursor: "pointer", userSelect: "none" }}>
+                          style={{ padding: "10px 12px", textAlign: "left", fontSize: 11, fontWeight: 600, color: tableSort.some(s => s.key === col.key) ? "#2563eb" : "#475569", textTransform: "uppercase", letterSpacing: "0.4px", whiteSpace: "nowrap", width: col.width, cursor: "pointer", userSelect: "none" }}>
                           {col.label}<SortIcon colKey={col.key} />
                         </th>
                       ))}
