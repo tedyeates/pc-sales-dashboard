@@ -415,11 +415,17 @@ function Dashboard({ session }) {
     const relevantMonths = qMonths[selectedQ];
     return relevantMonths.map(m => {
       const rows = enriched.filter(r => r.year === selectedYear && r.parsedDate && (r.parsedDate.getMonth()+1) === m);
+      const orderRows    = rows.filter(r => r.stage === "Order");
+      const onTrackRows  = rows.filter(r => r.stage === "On track");
+      const failRows     = rows.filter(r => r.stage === "Fail");
       return {
         month: months[m],
-        Order: rows.filter(r => r.stage === "Order").reduce((s, r) => s + r.price, 0) / 1000000,
-        "On track": rows.filter(r => r.stage === "On track").reduce((s, r) => s + r.price, 0) / 1000000,
-        Fail: rows.filter(r => r.stage === "Fail").reduce((s, r) => s + r.price, 0) / 1000000,
+        Order:          orderRows.reduce((s, r) => s + r.price, 0) / 1000000,
+        "On track":     onTrackRows.reduce((s, r) => s + r.price, 0) / 1000000,
+        Fail:           failRows.reduce((s, r) => s + r.price, 0) / 1000000,
+        OrderCount:     orderRows.length,
+        OnTrackCount:   onTrackRows.length,
+        FailCount:      failRows.length,
       };
     });
   }, [enriched, selectedYear, selectedQ]);
@@ -941,7 +947,29 @@ function Dashboard({ session }) {
                   <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
                   <XAxis dataKey="month" tick={{ fill: "#64748b", fontSize: 13 }} axisLine={false} tickLine={false} />
                   <YAxis tick={{ fill: "#64748b", fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={v => `฿${v.toFixed(1)}M`} width={50} />
-                  <Tooltip contentStyle={{ background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8, fontSize: 12 }} formatter={(v) => [`฿${(v).toFixed(2)}M`]} />
+                  <Tooltip
+                    contentStyle={{ background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8, fontSize: 12 }}
+                    content={({ active, payload, label }) => {
+                      if (!active || !payload?.length) return null;
+                      const d = monthlyData.find(m => m.month === label);
+                      const entries = [
+                        { name: "Orders",   value: payload.find(p => p.dataKey === "Order")?.value ?? 0,        count: d?.OrderCount ?? 0,   color: "#10b981" },
+                        { name: "On Track", value: payload.find(p => p.dataKey === "On track")?.value ?? 0,     count: d?.OnTrackCount ?? 0, color: "#f59e0b" },
+                        { name: "Failed",   value: payload.find(p => p.dataKey === "Fail")?.value ?? 0,         count: d?.FailCount ?? 0,    color: "#ef4444" },
+                      ];
+                      return (
+                        <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 14px", fontSize: 12 }}>
+                          <div style={{ fontWeight: 700, color: "#0f172a", marginBottom: 8 }}>{label}</div>
+                          {entries.map(e => (
+                            <div key={e.name} style={{ display: "flex", justifyContent: "space-between", gap: 16, marginBottom: 4 }}>
+                              <span style={{ color: e.color, fontWeight: 600 }}>● {e.name}</span>
+                              <span style={{ color: "#0f172a" }}>฿{e.value.toFixed(2)}M <span style={{ color: "#94a3b8" }}>({e.count} QO)</span></span>
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    }}
+                  />
                   <Legend wrapperStyle={{ fontSize: 12 }} />
                   <Bar dataKey="Order" fill="#10b981" radius={[4,4,0,0]} name="Orders" />
                   <Bar dataKey="On track" fill="#f59e0b" radius={[4,4,0,0]} name="On Track" />
@@ -955,21 +983,29 @@ function Dashboard({ session }) {
                 <div key={m.month} className="card">
                   <div style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", fontFamily: "'Space Grotesk', sans-serif", marginBottom: 12 }}>{m.month}</div>
                   <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                       <span style={{ fontSize: 12, color: "#475569" }}>Orders</span>
-                      <span style={{ fontSize: 12, fontWeight: 600, color: "#10b981" }}>฿{m.Order.toFixed(2)}M</span>
+                      <span style={{ fontSize: 12, fontWeight: 600, color: "#10b981" }}>
+                        ฿{m.Order.toFixed(2)}M <span style={{ fontSize: 11, fontWeight: 400, color: "#94a3b8" }}>({m.OrderCount} QO)</span>
+                      </span>
                     </div>
-                    <div style={{ display: "flex", justifyContent: "space-between" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                       <span style={{ fontSize: 12, color: "#475569" }}>On Track</span>
-                      <span style={{ fontSize: 12, fontWeight: 600, color: "#f59e0b" }}>฿{m["On track"].toFixed(2)}M</span>
+                      <span style={{ fontSize: 12, fontWeight: 600, color: "#f59e0b" }}>
+                        ฿{m["On track"].toFixed(2)}M <span style={{ fontSize: 11, fontWeight: 400, color: "#94a3b8" }}>({m.OnTrackCount} QO)</span>
+                      </span>
                     </div>
-                    <div style={{ display: "flex", justifyContent: "space-between" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                       <span style={{ fontSize: 12, color: "#475569" }}>Failed</span>
-                      <span style={{ fontSize: 12, fontWeight: 600, color: "#ef4444" }}>฿{m.Fail.toFixed(2)}M</span>
+                      <span style={{ fontSize: 12, fontWeight: 600, color: "#ef4444" }}>
+                        ฿{m.Fail.toFixed(2)}M <span style={{ fontSize: 11, fontWeight: 400, color: "#94a3b8" }}>({m.FailCount} QO)</span>
+                      </span>
                     </div>
-                    <div style={{ borderTop: "1px solid #1e293b", paddingTop: 8, display: "flex", justifyContent: "space-between" }}>
+                    <div style={{ borderTop: "1px solid #e2e8f0", paddingTop: 8, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                       <span style={{ fontSize: 12, color: "#475569", fontWeight: 600 }}>Total Active</span>
-                      <span style={{ fontSize: 12, fontWeight: 700, color: "#3b82f6" }}>฿{(m.Order + m["On track"]).toFixed(2)}M</span>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: "#3b82f6" }}>
+                        ฿{(m.Order + m["On track"]).toFixed(2)}M <span style={{ fontSize: 11, fontWeight: 400, color: "#94a3b8" }}>({m.OrderCount + m.OnTrackCount} QO)</span>
+                      </span>
                     </div>
                   </div>
                 </div>
