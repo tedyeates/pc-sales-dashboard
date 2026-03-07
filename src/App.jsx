@@ -356,6 +356,10 @@ function Dashboard({ session }) {
     return counts;
   }, [allForQ]);
 
+  const allStatusTotal = useMemo(() =>
+    allForQ.reduce((s, r) => s + r.price, 0),
+  [allForQ]);
+
   const orderTotal = useMemo(() =>
     allForQ.filter(r => r.stage === "Order").reduce((s, r) => s + r.price, 0),
   [allForQ]);
@@ -760,7 +764,7 @@ function Dashboard({ session }) {
             {/* KPI Cards */}
             <div className="kpi-grid">
               {[
-                { label: "Total Quotations", value: allForQ.length, sub: "All statuses", icon: "📋", color: "#3b82f6" },
+                { label: "Total Quotations", value: allForQ.length, sub: `All statuses ${fmt(allStatusTotal)}`, icon: "📋", color: "#3b82f6" },
                 { label: "Orders Confirmed", value: stageCounts.Order, sub: `${fmt(orderTotal)}`, icon: "✅", color: "#10b981" },
                 { label: "In Progress", value: stageCounts["On track"], sub: `${fmt(onTrackTotal)} potential`, icon: "🔄", color: "#f59e0b" },
                 { label: "Failed", value: stageCounts.Fail, sub: `${fmt(failedTotal)} lost`, icon: "❌", color: "#ef4444" },
