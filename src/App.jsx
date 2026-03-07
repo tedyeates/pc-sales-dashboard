@@ -174,6 +174,32 @@ function getQuarter(date) {
 }
 function getYear(date) { return date.getFullYear(); }
 
+// Format ISO date string (YYYY-MM-DD) to display format (DD/MM/YYYY)
+function isoToDisplay(iso) {
+  if (!iso) return "";
+  const s = String(iso).trim().substring(0, 10);
+  const [y, m, d] = s.split("-");
+  if (!y || !m || !d) return iso;
+  return `${d}/${m}/${y}`;
+}
+
+// Parse DD/MM/YYYY or YYYY-MM-DD input back to ISO YYYY-MM-DD for Supabase
+function displayToISO(val) {
+  if (!val) return null;
+  const s = String(val).trim();
+  // Already ISO
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  // DD/MM/YYYY
+  const parts = s.split("/");
+  if (parts.length === 3) {
+    let [d, m, y] = parts.map(Number);
+    if (y < 100) y += 2000;
+    if (isNaN(d) || isNaN(m) || isNaN(y)) return null;
+    return `${String(y).padStart(4,"0")}-${String(m).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
+  }
+  return null;
+}
+
 const GOAL = 30000000;
 const STAGE_COLORS = { Order: "#10b981", "On track": "#f59e0b", Fail: "#ef4444" };
 const AGENT_PALETTE = ["#6366f1","#ec4899","#14b8a6","#f59e0b","#10b981","#3b82f6","#8b5cf6","#ef4444","#06b6d4","#84cc16"];
@@ -1118,12 +1144,21 @@ function Dashboard({ session }) {
 
             if (isEditing) {
               const commitEdit = () => {
-                if (String(editingValue) !== String(val ?? "")) {
-                  handleCellSave(row.qo_number, col.key, col.type === "number" ? parseFloat(editingValue) || 0 : editingValue);
+                let saveVal = col.type === "number" ? parseFloat(editingValue) || 0 : editingValue;
+                if (col.type === "date") saveVal = displayToISO(editingValue);
+                if (String(saveVal) !== String(val ?? "")) {
+                  handleCellSave(row.qo_number, col.key, saveVal);
                 } else {
                   setEditingCell(null);
                 }
               };
+              if (col.type === "date") return (
+                <input autoFocus type="date" value={editingValue}
+                  onChange={e => setEditingValue(e.target.value)}
+                  onBlur={commitEdit}
+                  onKeyDown={e => { if (e.key === "Enter") commitEdit(); if (e.key === "Escape") setEditingCell(null); }}
+                  style={{ fontSize: 12, border: "1px solid #6366f1", borderRadius: 4, padding: "2px 4px", width: "100%", boxSizing: "border-box" }} />
+              );
               if (col.type === "stage") return (
                 <select autoFocus value={editingValue} onBlur={commitEdit}
                   onChange={e => { setEditingValue(e.target.value); }}
@@ -1151,13 +1186,20 @@ function Dashboard({ session }) {
               );
             }
 
-            const displayVal = col.type === "number" && col.key === "total_price"
+            const displayVal = col.key === "total_price"
               ? (val ? `฿${Number(val).toLocaleString()}` : "—")
+              : col.type === "date"
+              ? (isoToDisplay(val) || "—")
               : (val ?? "—");
 
             return (
               <span
-                onClick={() => { if (isSaving) return; setEditingCell({ id: row.qo_number, field: col.key }); setEditingValue(val ?? ""); }}
+                onClick={() => {
+                  if (isSaving) return;
+                  setEditingCell({ id: row.qo_number, field: col.key });
+                  // Date picker needs YYYY-MM-DD; other fields use raw value
+                  setEditingValue(col.type === "date" ? (String(val ?? "").substring(0, 10)) : (val ?? ""));
+                }}
                 title="Click to edit"
                 style={{
                   fontSize: 12, display: "block", cursor: "text", borderRadius: 4,
