@@ -1158,6 +1158,18 @@ function Dashboard({ session }) {
           };
 
           const stageColor = s => s === "Order" ? "#10b981" : s === "On track" ? "#f59e0b" : s === "Fail" ? "#ef4444" : "#94a3b8";
+          
+          function Paging() {
+            return (
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ fontSize: 12, color: "#64748b" }}>{sorted.length} rows · Page {page} of {totalPages}</span>
+                <button onClick={() => setTablePage(p => Math.max(1, p - 1))} disabled={page === 1}
+                  style={{ padding: "5px 10px", borderRadius: 6, border: "1px solid #e2e8f0", background: "#fff", cursor: page === 1 ? "not-allowed" : "pointer", fontSize: 12, color: page === 1 ? "#cbd5e1" : "#475569" }}>‹ Prev</button>
+                <button onClick={() => setTablePage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}
+                  style={{ padding: "5px 10px", borderRadius: 6, border: "1px solid #e2e8f0", background: "#fff", cursor: page === totalPages ? "not-allowed" : "pointer", fontSize: 12, color: page === totalPages ? "#cbd5e1" : "#475569" }}>Next ›</button>
+              </div>
+            )
+          }
 
           function CellContent({ row, col }) {
             const cellId = `${row.qo_number}-${col.key}`;
@@ -1265,13 +1277,7 @@ function Dashboard({ session }) {
                     </button>
                   )}
                 </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span style={{ fontSize: 12, color: "#64748b" }}>{sorted.length} rows · Page {page} of {totalPages}</span>
-                  <button onClick={() => setTablePage(p => Math.max(1, p - 1))} disabled={page === 1}
-                    style={{ padding: "5px 10px", borderRadius: 6, border: "1px solid #e2e8f0", background: "#fff", cursor: page === 1 ? "not-allowed" : "pointer", fontSize: 12, color: page === 1 ? "#cbd5e1" : "#475569" }}>‹ Prev</button>
-                  <button onClick={() => setTablePage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}
-                    style={{ padding: "5px 10px", borderRadius: 6, border: "1px solid #e2e8f0", background: "#fff", cursor: page === totalPages ? "not-allowed" : "pointer", fontSize: 12, color: page === totalPages ? "#cbd5e1" : "#475569" }}>Next ›</button>
-                </div>
+                <Paging />
               </div>
 
               {/* Table */}
@@ -1316,14 +1322,17 @@ function Dashboard({ session }) {
                   </tbody>
                 </table>
               </div>
-              <div style={{ marginTop: 8, fontSize: 11, color: "#94a3b8" }}>💡 Click any cell to edit · Changes save instantly to Supabase</div>
+              <div style={{ marginTop: 8, fontSize: 11, color: "#94a3b8" }}>💡 Click any cell to edit · Changes save instantly</div>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "right", marginBottom: 14, flexWrap: "wrap", gap: 10 }}>
+                <Paging />
+              </div>
             </div>
           );
         })()}
       </div>
 
       <div style={{ textAlign: "center", padding: "16px", color: "#94a3b8", fontSize: 11 }}>
-        PC Sales Pipeline Dashboard · Data from Q1–Q3 2026 · {RAW_DATA.length} records (live from Supabase)
+        PC Sales Pipeline Dashboard {RAW_DATA.length} records
       </div>
 
       {/* ── Delete Confirmation Modal ───────────────────────────────────── */}
