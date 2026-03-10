@@ -329,6 +329,8 @@ function Dashboard({ session }) {
   const [editingCell, setEditingCell] = useState(null); // { id, field }
   const [editingValue, setEditingValue] = useState("");
   const [savingCell, setSavingCell] = useState(null);
+  const [deleteConfirm, setDeleteConfirm] = useState(null); // { qo_number, company_name } | null
+  const [deletingRow, setDeletingRow] = useState(null); // qo_number string | null
 
   useEffect(() => {
     async function fetchData() {
@@ -632,6 +634,23 @@ function Dashboard({ session }) {
     }
   }
 
+  async function handleDeleteRow(qoNumber) {
+    setDeletingRow(qoNumber);
+    try {
+      const { error } = await supabase
+        .from("sales_pipeline")
+        .delete()
+        .eq("qo_number", qoNumber);
+      if (error) throw error;
+      await refreshData();
+    } catch (err) {
+      console.error("Delete error:", err);
+    } finally {
+      setDeletingRow(null);
+      setDeleteConfirm(null);
+    }
+  }
+
   const quarterLabel = `Q${selectedQ} ${selectedYear}`;
 
   // ── Early returns after all hooks ────────────────────────────────────────
@@ -696,6 +715,8 @@ function Dashboard({ session }) {
         .page-pad { padding: 24px 32px; }
         .chart-grid-2 { display: grid; grid-template-columns: 1fr 2fr; gap: 16px; }
         .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 20px; }
+
+        @keyframes spin { to { transform: rotate(360deg); } }
 
         @media (max-width: 640px) {
           .header-inner { padding: 16px; flex-direction: column; align-items: flex-start; }
@@ -1255,7 +1276,7 @@ function Dashboard({ session }) {
 
               {/* Table */}
               <div style={{ overflowX: "auto", borderRadius: 12, border: "1px solid #e2e8f0", background: "#fff" }}>
-                <table style={{ borderCollapse: "collapse", width: "100%", minWidth: TABLE_COLS.reduce((s, c) => s + c.width, 0) }}>
+                <table style={{ borderCollapse: "collapse", width: "100%", minWidth: TABLE_COLS.reduce((s, c) => s + c.width, 0) + 48 }}>
                   <thead>
                     <tr style={{ background: "#f8fafc", borderBottom: "1px solid #e2e8f0" }}>
                       {TABLE_COLS.map(col => (
@@ -1264,11 +1285,12 @@ function Dashboard({ session }) {
                           {col.label}<SortIcon colKey={col.key} />
                         </th>
                       ))}
+                      <th style={{ width: 48 }} />
                     </tr>
                   </thead>
                   <tbody>
                     {pageRows.length === 0 ? (
-                      <tr><td colSpan={TABLE_COLS.length} style={{ padding: 32, textAlign: "center", color: "#94a3b8", fontSize: 13 }}>No results found</td></tr>
+                      <tr><td colSpan={TABLE_COLS.length + 1} style={{ padding: 32, textAlign: "center", color: "#94a3b8", fontSize: 13 }}>No results found</td></tr>
                     ) : pageRows.map((row, i) => (
                       <tr key={row.qo_number} style={{ borderBottom: "1px solid #f1f5f9", background: i % 2 === 0 ? "#fff" : "#fafbfc" }}>
                         {TABLE_COLS.map(col => (
@@ -1276,6 +1298,19 @@ function Dashboard({ session }) {
                             <CellContent row={row} col={col} />
                           </td>
                         ))}
+                        <td style={{ padding: "4px 8px", textAlign: "center" }}>
+                          {deletingRow === row.qo_number ? (
+                            <span style={{ display: "inline-block", width: 14, height: 14, border: "2px solid #fca5a5", borderTop: "2px solid #ef4444", borderRadius: "50%", animation: "spin 0.6s linear infinite", verticalAlign: "middle" }} />
+                          ) : (
+                            <button
+                              onClick={() => setDeleteConfirm({ qo_number: row.qo_number, company_name: row.company_name })}
+                              title="Delete row"
+                              style={{ background: "none", border: "none", cursor: "pointer", padding: "4px 6px", borderRadius: 6, color: "#cbd5e1", fontSize: 14, lineHeight: 1 }}
+                              onMouseEnter={e => { e.currentTarget.style.color = "#ef4444"; e.currentTarget.style.background = "#fef2f2"; }}
+                              onMouseLeave={e => { e.currentTarget.style.color = "#cbd5e1"; e.currentTarget.style.background = "none"; }}
+                            >🗑</button>
+                          )}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -1290,6 +1325,36 @@ function Dashboard({ session }) {
       <div style={{ textAlign: "center", padding: "16px", color: "#94a3b8", fontSize: 11 }}>
         PC Sales Pipeline Dashboard · Data from Q1–Q3 2026 · {RAW_DATA.length} records (live from Supabase)
       </div>
+
+      {/* ── Delete Confirmation Modal ───────────────────────────────────── */}
+      {deleteConfirm && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1100, padding: 16 }}
+          onClick={e => { if (e.target === e.currentTarget && !deletingRow) setDeleteConfirm(null); }}>
+          <div style={{ background: "#fff", borderRadius: 16, padding: "28px 32px", maxWidth: 400, width: "100%", boxShadow: "0 24px 64px rgba(0,0,0,0.18)", textAlign: "center" }}>
+            <div style={{ width: 48, height: 48, borderRadius: "50%", background: "#fef2f2", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, margin: "0 auto 16px" }}>🗑</div>
+            <div style={{ fontWeight: 700, fontSize: 17, color: "#0f172a", marginBottom: 8 }}>Delete Row?</div>
+            <div style={{ fontSize: 13, color: "#64748b", marginBottom: 6 }}>You are about to permanently delete:</div>
+            <div style={{ fontSize: 13, fontWeight: 600, color: "#0f172a", marginBottom: 4 }}>{deleteConfirm.company_name || "—"}</div>
+            <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 20, fontFamily: "monospace" }}>{deleteConfirm.qo_number}</div>
+            <div style={{ fontSize: 12, color: "#ef4444", marginBottom: 24 }}>This action cannot be undone.</div>
+            <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
+              <button onClick={() => setDeleteConfirm(null)} disabled={!!deletingRow}
+                style={{ padding: "9px 20px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", fontSize: 13, fontWeight: 500, cursor: deletingRow ? "not-allowed" : "pointer", color: "#475569", opacity: deletingRow ? 0.5 : 1 }}>
+                Cancel
+              </button>
+              <button onClick={() => handleDeleteRow(deleteConfirm.qo_number)} disabled={!!deletingRow}
+                style={{ padding: "9px 20px", borderRadius: 8, border: "none", background: "#ef4444", color: "#fff", fontSize: 13, fontWeight: 600, cursor: deletingRow ? "not-allowed" : "pointer", opacity: deletingRow ? 0.8 : 1, display: "inline-flex", alignItems: "center", gap: 8 }}>
+                {deletingRow ? (
+                  <>
+                    <span style={{ display: "inline-block", width: 13, height: 13, border: "2px solid rgba(255,255,255,0.4)", borderTop: "2px solid #fff", borderRadius: "50%", animation: "spin 0.6s linear infinite" }} />
+                    Deleting…
+                  </>
+                ) : "Delete"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Review & Edit Modal ─────────────────────────────────────────── */}
       {reviewRow && (
