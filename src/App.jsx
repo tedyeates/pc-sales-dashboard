@@ -515,7 +515,7 @@ function Dashboard({ session }) {
     }
 
     return {
-      qo_number:      String(getCell("K4")).trim(),
+      qo_number:      String(getCell("J4")).trim(),
       company_name:   String(getCell("B7")).trim(),
       contact_person: String(getCell("B6")).trim(),
       project_name:   String(getCell("I6")).trim(),
