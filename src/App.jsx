@@ -317,6 +317,12 @@ function Dashboard({ session }) {
   // ── All hooks first (Rules of Hooks) ─────────────────────────────────────
   const [RAW_DATA, setRawData] = useState(null);
   const [dataError, setDataError] = useState(null);
+
+  // ── Table-tab server-side state ──────────────────────────────────────────
+  const [tableRows, setTableRows]     = useState([]);
+  const [tableTotal, setTableTotal]   = useState(0);
+  const [tableLoading, setTableLoading] = useState(false);
+  const [tableRefreshKey, setTableRefreshKey] = useState(0);
   const [selectedYear, setSelectedYear] = useState(2026);
   const [selectedQ, setSelectedQ] = useState(1);
   const [activeTab, setActiveTab] = useState("overview");
@@ -332,12 +338,30 @@ function Dashboard({ session }) {
   const [deleteConfirm, setDeleteConfirm] = useState(null); // { qo_number, company_name } | null
   const [deletingRow, setDeletingRow] = useState(null); // qo_number string | null
 
+  // ── Helper: quarter → ISO date range ────────────────────────────────────
+  function quarterDateRange(year, q) {
+    const startMonth = (q - 1) * 3 + 1;
+    const endMonth   = q * 3;
+    const pad = n => String(n).padStart(2, "0");
+    const lastDay = new Date(year, endMonth, 0).getDate();
+    return {
+      from: `${year}-${pad(startMonth)}-01`,
+      to:   `${year}-${pad(endMonth)}-${lastDay}`,
+    };
+  }
+
+  // ── Fetch stats data filtered by selected quarter/year ───────────────────
   useEffect(() => {
-    async function fetchData() {
+    async function fetchStats() {
+      setRawData(null);
+      setDataError(null);
       try {
+        const { from, to } = quarterDateRange(selectedYear, selectedQ);
         const { data, error } = await supabase
           .from('sales_pipeline')
           .select('qo_number, company_name, contact_person, project_name, total_price, validity, sales_agent, stage, create_date, reason, po_qt, follow_up_1, follow_up_2, follow_up_3, revision')
+          .gte('create_date', from)
+          .lte('create_date', to)
           .order('id', { ascending: true });
         if (error) throw error;
         const mapped = data.map(r => ({
@@ -363,22 +387,111 @@ function Dashboard({ session }) {
         setDataError(err.message || 'Failed to load data');
       }
     }
-    fetchData();
-  }, []);
+    fetchStats();
+  }, [selectedYear, selectedQ]);
+
+  // ── Fetch table-tab data server-side (search / sort / paginate) ─────────
+  const TABLE_PAGE_SIZE = 20;
+  // Supabase column name map (display col.key → db column)
+  const TABLE_COL_TO_DB = {
+    qo_number:      "qo_number",
+    create_date:    "create_date",
+    company_name:   "company_name",
+    contact_person: "contact_person",
+    project_name:   "project_name",
+    total_price:    "total_price",
+    revision:       "revision",
+    sales_agent:    "sales_agent",
+    stage:          "stage",
+    po_qt:          "po_qt",
+    validity:       "validity",
+    reason:         "reason",
+    follow_up_1:    "follow_up_1",
+    follow_up_2:    "follow_up_2",
+    follow_up_3:    "follow_up_3",
+  };
+
+  useEffect(() => {
+    if (activeTab !== "table") return;
+    async function fetchTable() {
+      setTableLoading(true);
+      try {
+        const from = (tablePage - 1) * TABLE_PAGE_SIZE;
+        const to   = from + TABLE_PAGE_SIZE - 1;
+
+        let query = supabase
+          .from("sales_pipeline")
+          .select(
+            "qo_number, company_name, contact_person, project_name, total_price, validity, sales_agent, stage, create_date, reason, po_qt, follow_up_1, follow_up_2, follow_up_3, revision",
+            { count: "exact" }
+          );
+
+        // Full-text search via ilike on multiple columns
+        if (tableSearch.trim()) {
+          const q = `%${tableSearch.trim()}%`;
+          query = query.or(
+            `qo_number.ilike.${q},company_name.ilike.${q},contact_person.ilike.${q},project_name.ilike.${q},sales_agent.ilike.${q},stage.ilike.${q}`
+          );
+        }
+
+        // Multi-column sort
+        if (tableSort.length > 0) {
+          tableSort.forEach(({ key, dir }) => {
+            const col = TABLE_COL_TO_DB[key] ?? key;
+            query = query.order(col, { ascending: dir === "asc", nullsFirst: false });
+          });
+        } else {
+          query = query.order("id", { ascending: true });
+        }
+
+        query = query.range(from, to);
+
+        const { data, error, count } = await query;
+        if (error) throw error;
+        setTableRows(data ?? []);
+        setTableTotal(count ?? 0);
+      } catch (err) {
+        console.error("Table fetch error:", err);
+      } finally {
+        setTableLoading(false);
+      }
+    }
+    fetchTable();
+  }, [activeTab, tablePage, tableSearch, tableSort, tableRefreshKey]);
 
   const enriched = useMemo(() => (RAW_DATA ?? []).map(r => {
     const d = parseDate(r.date);
     return { ...r, parsedDate: d, quarter: d ? getQuarter(d) : null, year: d ? getYear(d) : null };
   }), [RAW_DATA]);
 
-  const years = useMemo(() => {
-    const ys = new Set(enriched.map(r => r.year).filter(Boolean));
-    return [...ys].sort();
-  }, [enriched]);
+  const [availableYears, setAvailableYears] = useState([2026]);
 
-  const allForQ = useMemo(() =>
-    enriched.filter(r => r.year === selectedYear && r.quarter === selectedQ),
-  [enriched, selectedYear, selectedQ]);
+  useEffect(() => {
+    async function fetchYears() {
+      try {
+        // Fetch only create_date to derive distinct years without the 1000-row limit issue
+        const { data, error } = await supabase
+          .from("sales_pipeline")
+          .select("create_date")
+          .not("create_date", "is", null);
+        if (error) throw error;
+        const ys = new Set((data ?? []).map(r => {
+          const d = parseDate(r.create_date);
+          return d ? getYear(d) : null;
+        }).filter(Boolean));
+        const sorted = [...ys].sort();
+        if (sorted.length > 0) setAvailableYears(sorted);
+      } catch (err) {
+        console.error("fetchYears error:", err);
+      }
+    }
+    fetchYears();
+  }, []);
+
+  const years = availableYears;
+
+  // Data is already filtered by quarter/year from Supabase
+  const allForQ = enriched;
 
   const stageCounts = useMemo(() => {
     const counts = { Order: 0, "On track": 0, Fail: 0 };
@@ -411,11 +524,28 @@ function Dashboard({ session }) {
     { name: "Fail", value: stageCounts.Fail },
   ];
 
+  const [allAgents, setAllAgents] = useState([]);
+
+  useEffect(() => {
+    async function fetchAgents() {
+      try {
+        const { data, error } = await supabase
+          .from("sales_pipeline")
+          .select("sales_agent")
+          .not("sales_agent", "is", null)
+          .neq("sales_agent", "");
+        if (error) throw error;
+        const set = new Set((data ?? []).map(r => r.sales_agent).filter(Boolean));
+        setAllAgents([...set].sort());
+      } catch (err) {
+        console.error("fetchAgents error:", err);
+      }
+    }
+    fetchAgents();
+  }, []);
+
   // Derive unique agents from full dataset, sorted alphabetically
-  const agents = useMemo(() => {
-    const set = new Set(enriched.map(r => r.agent).filter(Boolean));
-    return [...set].sort();
-  }, [enriched]);
+  const agents = allAgents;
 
   // Agent performance — only include agents with activity this quarter
   const agentData = useMemo(() => {
@@ -444,7 +574,7 @@ function Dashboard({ session }) {
     const qMonths = { 1: [1,2,3], 2: [4,5,6], 3: [7,8,9], 4: [10,11,12] };
     const relevantMonths = qMonths[selectedQ];
     return relevantMonths.map(m => {
-      const rows = enriched.filter(r => r.year === selectedYear && r.parsedDate && (r.parsedDate.getMonth()+1) === m);
+      const rows = enriched.filter(r => r.parsedDate && (r.parsedDate.getMonth()+1) === m);
       const orderRows    = rows.filter(r => r.stage === "Order");
       const onTrackRows  = rows.filter(r => r.stage === "On track");
       const failRows     = rows.filter(r => r.stage === "Fail");
@@ -458,7 +588,7 @@ function Dashboard({ session }) {
         FailCount:      failRows.length,
       };
     });
-  }, [enriched, selectedYear, selectedQ]);
+  }, [enriched, selectedQ]);
 
   const fmt = (n) => n >= 1000000 ? `฿${(n/1000000).toFixed(2)}M` : n >= 1000 ? `฿${(n/1000).toFixed(0)}K` : `฿${n.toFixed(0)}`;
 
@@ -529,29 +659,39 @@ function Dashboard({ session }) {
   }
 
   async function refreshData() {
-    const { data, error: fetchErr } = await supabase
-      .from("sales_pipeline")
-      .select('qo_number, company_name, contact_person, project_name, total_price, validity, sales_agent, stage, create_date, reason, po_qt, follow_up_1, follow_up_2, follow_up_3, revision')
-      .order("id", { ascending: true });
-    if (!fetchErr) {
-      setRawData(data.map(r => ({
-        qo:          r.qo_number      ?? "",
-        company:     r.company_name   ?? "",
-        contact:     r.contact_person ?? "",
-        project:     r.project_name   ?? "",
-        price:       parseFloat(r.total_price) || 0,
-        agent:       r.sales_agent    ?? "",
-        stage:       r.stage          ?? "",
-        date:        r.create_date    ?? "",
-        reason:      r.reason         ?? "",
-        validity:    r.validity       ?? null,
-        po_qt:       r.po_qt          ?? "",
-        follow_up_1: r.follow_up_1    ?? "",
-        follow_up_2: r.follow_up_2    ?? "",
-        follow_up_3: r.follow_up_3    ?? "",
-        revision:    r.revision       ?? 0,
-      })));
+    // Re-fetch stats (quarter-filtered)
+    try {
+      const { from, to } = quarterDateRange(selectedYear, selectedQ);
+      const { data, error: fetchErr } = await supabase
+        .from("sales_pipeline")
+        .select('qo_number, company_name, contact_person, project_name, total_price, validity, sales_agent, stage, create_date, reason, po_qt, follow_up_1, follow_up_2, follow_up_3, revision')
+        .gte('create_date', from)
+        .lte('create_date', to)
+        .order("id", { ascending: true });
+      if (!fetchErr) {
+        setRawData(data.map(r => ({
+          qo:          r.qo_number      ?? "",
+          company:     r.company_name   ?? "",
+          contact:     r.contact_person ?? "",
+          project:     r.project_name   ?? "",
+          price:       parseFloat(r.total_price) || 0,
+          agent:       r.sales_agent    ?? "",
+          stage:       r.stage          ?? "",
+          date:        r.create_date    ?? "",
+          reason:      r.reason         ?? "",
+          validity:    r.validity       ?? null,
+          po_qt:       r.po_qt          ?? "",
+          follow_up_1: r.follow_up_1    ?? "",
+          follow_up_2: r.follow_up_2    ?? "",
+          follow_up_3: r.follow_up_3    ?? "",
+          revision:    r.revision       ?? 0,
+        })));
+      }
+    } catch (err) {
+      console.error("refreshData stats error:", err);
     }
+    // Trigger table tab re-fetch via key bump
+    setTableRefreshKey(k => k + 1);
   }
 
   async function handleUpload(e) {
@@ -1067,7 +1207,6 @@ function Dashboard({ session }) {
 
         {/* DATA TABLE TAB */}
         {activeTab === "table" && (() => {
-          const PAGE_SIZE = 20;
           const TABLE_COLS = [
             { key: "qo_number",      label: "QO Number",    width: 110, editable: false },
             { key: "create_date",    label: "Date",         width: 110, editable: true,  type: "date" },
@@ -1086,53 +1225,9 @@ function Dashboard({ session }) {
             { key: "follow_up_3",    label: "Follow Up 3",  width: 130, editable: true,  type: "text" },
           ];
 
-          const filtered = (RAW_DATA ?? []).map(r => ({
-            qo_number:      r.qo,
-            create_date:    r.date,
-            company_name:   r.company,
-            contact_person: r.contact,
-            project_name:   r.project,
-            total_price:    r.price,
-            sales_agent:    r.agent,
-            stage:          r.stage,
-            reason:         r.reason,
-            po_qt:          r.po_qt       ?? "",
-            validity:       r.validity    ?? "",
-            follow_up_1:    r.follow_up_1 ?? "",
-            follow_up_2:    r.follow_up_2 ?? "",
-            follow_up_3:    r.follow_up_3 ?? "",
-            revision:       r.revision    ?? 0,
-          })).filter(r => {
-            if (!tableSearch.trim()) return true;
-            const q = tableSearch.toLowerCase();
-            return (
-              r.qo_number?.toLowerCase().includes(q) ||
-              r.company_name?.toLowerCase().includes(q) ||
-              r.contact_person?.toLowerCase().includes(q) ||
-              r.project_name?.toLowerCase().includes(q) ||
-              r.sales_agent?.toLowerCase().includes(q) ||
-              r.stage?.toLowerCase().includes(q)
-            );
-          });
-
-          const sorted = [...filtered].sort((a, b) => {
-            for (const { key, dir } of tableSort) {
-              const av = a[key] ?? "";
-              const bv = b[key] ?? "";
-              let cmp = 0;
-              if (key === "total_price" || key === "validity") {
-                cmp = (parseFloat(av) || 0) - (parseFloat(bv) || 0);
-              } else {
-                cmp = String(av).localeCompare(String(bv));
-              }
-              if (cmp !== 0) return dir === "asc" ? cmp : -cmp;
-            }
-            return 0;
-          });
-
-          const totalPages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
+          // Server-side data — tableRows already paginated/filtered/sorted by Supabase
+          const totalPages = Math.max(1, Math.ceil(tableTotal / TABLE_PAGE_SIZE));
           const page = Math.min(tablePage, totalPages);
-          const pageRows = sorted.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
           // Cycle: none → asc → desc → none
           const toggleSort = key => {
@@ -1140,7 +1235,7 @@ function Dashboard({ session }) {
               const existing = prev.find(s => s.key === key);
               if (!existing) return [...prev, { key, dir: "asc" }];
               if (existing.dir === "asc") return prev.map(s => s.key === key ? { key, dir: "desc" } : s);
-              return prev.filter(s => s.key !== key); // remove = no sort
+              return prev.filter(s => s.key !== key);
             });
             setTablePage(1);
           };
@@ -1162,11 +1257,13 @@ function Dashboard({ session }) {
           function Paging() {
             return (
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <span style={{ fontSize: 12, color: "#64748b" }}>{sorted.length} rows · Page {page} of {totalPages}</span>
-                <button onClick={() => setTablePage(p => Math.max(1, p - 1))} disabled={page === 1}
-                  style={{ padding: "5px 10px", borderRadius: 6, border: "1px solid #e2e8f0", background: "#fff", cursor: page === 1 ? "not-allowed" : "pointer", fontSize: 12, color: page === 1 ? "#cbd5e1" : "#475569" }}>‹ Prev</button>
-                <button onClick={() => setTablePage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}
-                  style={{ padding: "5px 10px", borderRadius: 6, border: "1px solid #e2e8f0", background: "#fff", cursor: page === totalPages ? "not-allowed" : "pointer", fontSize: 12, color: page === totalPages ? "#cbd5e1" : "#475569" }}>Next ›</button>
+                <span style={{ fontSize: 12, color: "#64748b" }}>
+                  {tableLoading ? "Loading…" : `${tableTotal} rows · Page ${page} of ${totalPages}`}
+                </span>
+                <button onClick={() => setTablePage(p => Math.max(1, p - 1))} disabled={page === 1 || tableLoading}
+                  style={{ padding: "5px 10px", borderRadius: 6, border: "1px solid #e2e8f0", background: "#fff", cursor: (page === 1 || tableLoading) ? "not-allowed" : "pointer", fontSize: 12, color: (page === 1 || tableLoading) ? "#cbd5e1" : "#475569" }}>‹ Prev</button>
+                <button onClick={() => setTablePage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages || tableLoading}
+                  style={{ padding: "5px 10px", borderRadius: 6, border: "1px solid #e2e8f0", background: "#fff", cursor: (page === totalPages || tableLoading) ? "not-allowed" : "pointer", fontSize: 12, color: (page === totalPages || tableLoading) ? "#cbd5e1" : "#475569" }}>Next ›</button>
               </div>
             )
           }
@@ -1236,7 +1333,6 @@ function Dashboard({ session }) {
                 onClick={() => {
                   if (isSaving) return;
                   setEditingCell({ id: row.qo_number, field: col.key });
-                  // Date picker needs YYYY-MM-DD; other fields use raw value
                   setEditingValue(col.type === "date" ? (String(val ?? "").substring(0, 10)) : (val ?? ""));
                 }}
                 title="Click to edit"
@@ -1281,7 +1377,12 @@ function Dashboard({ session }) {
               </div>
 
               {/* Table */}
-              <div style={{ overflowX: "auto", borderRadius: 12, border: "1px solid #e2e8f0", background: "#fff" }}>
+              <div style={{ overflowX: "auto", borderRadius: 12, border: "1px solid #e2e8f0", background: "#fff", position: "relative" }}>
+                {tableLoading && (
+                  <div style={{ position: "absolute", inset: 0, background: "rgba(255,255,255,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 10, borderRadius: 12 }}>
+                    <div style={{ width: 28, height: 28, border: "3px solid #e2e8f0", borderTop: "3px solid #6366f1", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+                  </div>
+                )}
                 <table style={{ borderCollapse: "collapse", width: "100%", minWidth: TABLE_COLS.reduce((s, c) => s + c.width, 0) + 48 }}>
                   <thead>
                     <tr style={{ background: "#f8fafc", borderBottom: "1px solid #e2e8f0" }}>
@@ -1295,9 +1396,9 @@ function Dashboard({ session }) {
                     </tr>
                   </thead>
                   <tbody>
-                    {pageRows.length === 0 ? (
+                    {tableRows.length === 0 && !tableLoading ? (
                       <tr><td colSpan={TABLE_COLS.length + 1} style={{ padding: 32, textAlign: "center", color: "#94a3b8", fontSize: 13 }}>No results found</td></tr>
-                    ) : pageRows.map((row, i) => (
+                    ) : tableRows.map((row, i) => (
                       <tr key={row.qo_number} style={{ borderBottom: "1px solid #f1f5f9", background: i % 2 === 0 ? "#fff" : "#fafbfc" }}>
                         {TABLE_COLS.map(col => (
                           <td key={col.key} style={{ padding: "8px 12px", maxWidth: col.width, overflow: "hidden" }}>
@@ -1332,7 +1433,7 @@ function Dashboard({ session }) {
       </div>
 
       <div style={{ textAlign: "center", padding: "16px", color: "#94a3b8", fontSize: 11 }}>
-        PC Sales Pipeline Dashboard {RAW_DATA.length} records
+        PC Sales Pipeline Dashboard · {tableTotal > 0 ? `${tableTotal} total records` : `${(RAW_DATA ?? []).length} records this quarter`}
       </div>
 
       {/* ── Delete Confirmation Modal ───────────────────────────────────── */}
