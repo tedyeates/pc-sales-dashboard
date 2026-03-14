@@ -318,13 +318,19 @@ function Dashboard({ session }) {
   const [RAW_DATA, setRawData] = useState(null);
   const [dataError, setDataError] = useState(null);
 
+  // ── Set default quarter/year to current date on first load ─────────────────────
+  const today = new Date();
+  const defaultYear = today.getFullYear();
+  const defaultMonth = today.getMonth();
+  const defaultQ = Math.floor((defaultMonth) / 3) + 1;
+
   // ── Table-tab server-side state ──────────────────────────────────────────
   const [tableRows, setTableRows]     = useState([]);
   const [tableTotal, setTableTotal]   = useState(0);
   const [tableLoading, setTableLoading] = useState(false);
   const [tableRefreshKey, setTableRefreshKey] = useState(0);
-  const [selectedYear, setSelectedYear] = useState(2026);
-  const [selectedQ, setSelectedQ] = useState(1);
+  const [selectedYear, setSelectedYear] = useState(defaultYear);
+  const [selectedQ, setSelectedQ] = useState(defaultQ);
   const [activeTab, setActiveTab] = useState("overview");
   const [uploadState, setUploadState] = useState("idle"); // idle | loading | success | error
   const [uploadMessage, setUploadMessage] = useState("");
