@@ -214,6 +214,9 @@ const FIELDS = [
   { key: "company_name",   label: "Company Name",   type: "text" },
   { key: "contact_person", label: "Contact Person", type: "text" },
   { key: "project_name",   label: "Project Name",   type: "text" },
+  { key: "price_cabinet",  label: "Price Cabinet",  type: "number" },
+  { key: "price_wire_busbar", label: "Price Wire/Busbar", type: "number" },
+  { key: "price_equipment", label: "Price Equipment", type: "number" },
   { key: "total_price",    label: "Total Price",    type: "number" },
   { key: "revision",       label: "Revision",       type: "number" },
   { key: "validity",       label: "Validity (days)",type: "number" },
@@ -365,7 +368,7 @@ function Dashboard({ session }) {
         const { from, to } = quarterDateRange(selectedYear, selectedQ);
         const { data, error } = await supabase
           .from('sales_pipeline')
-          .select('qo_number, company_name, contact_person, project_name, total_price, validity, sales_agent, stage, create_date, reason, po_qt, follow_up_1, follow_up_2, follow_up_3, revision')
+          .select('qo_number, company_name, contact_person, project_name, price_cabinet, price_wire_busbar, price_equipment, total_price, validity, sales_agent, stage, create_date, reason, po_qt, follow_up_1, follow_up_2, follow_up_3, revision')
           .gte('create_date', from)
           .lte('create_date', to)
           .order('id', { ascending: true });
@@ -375,6 +378,9 @@ function Dashboard({ session }) {
           company: r.company_name   ?? '',
           contact: r.contact_person ?? '',
           project: r.project_name   ?? '',
+          price_cabinet:   parseFloat(r.price_cabinet) || 0,
+          price_wire_busbar: parseFloat(r.price_wire_busbar) || 0,
+          price_equipment: parseFloat(r.price_equipment) || 0,
           price:   parseFloat(r.total_price) || 0,
           agent:   r.sales_agent    ?? '',
           stage:   r.stage          ?? '',
@@ -405,6 +411,9 @@ function Dashboard({ session }) {
     company_name:   "company_name",
     contact_person: "contact_person",
     project_name:   "project_name",
+    price_cabinet:   "price_cabinet",
+    price_wire_busbar: "price_wire_busbar",
+    price_equipment: "price_equipment",
     total_price:    "total_price",
     revision:       "revision",
     sales_agent:    "sales_agent",
@@ -428,7 +437,7 @@ function Dashboard({ session }) {
         let query = supabase
           .from("sales_pipeline")
           .select(
-            "qo_number, company_name, contact_person, project_name, total_price, validity, sales_agent, stage, create_date, reason, po_qt, follow_up_1, follow_up_2, follow_up_3, revision",
+            "qo_number, company_name, contact_person, project_name, price_cabinet, price_wire_busbar, price_equipment, total_price, validity, sales_agent, stage, create_date, reason, po_qt, follow_up_1, follow_up_2, follow_up_3, revision",
             { count: "exact" }
           );
 
@@ -657,6 +666,9 @@ function Dashboard({ session }) {
       project_name:   String(getCell("I6")).trim(),
       validity:       parseCurrency(getCell("I9")),
       sales_agent:    String(getCell("F42")).trim(),
+      price_cabinet:   0,
+      price_wire_busbar: 0,
+      price_equipment: 0,
       total_price:    parseCurrency(getCell("J35")),
       create_date:    toISO(getCell("K5")),
       stage:          "On track",
@@ -670,7 +682,7 @@ function Dashboard({ session }) {
       const { from, to } = quarterDateRange(selectedYear, selectedQ);
       const { data, error: fetchErr } = await supabase
         .from("sales_pipeline")
-        .select('qo_number, company_name, contact_person, project_name, total_price, validity, sales_agent, stage, create_date, reason, po_qt, follow_up_1, follow_up_2, follow_up_3, revision')
+        .select('qo_number, company_name, contact_person, project_name, price_cabinet, price_wire_busbar, price_equipment, total_price, validity, sales_agent, stage, create_date, reason, po_qt, follow_up_1, follow_up_2, follow_up_3, revision')
         .gte('create_date', from)
         .lte('create_date', to)
         .order("id", { ascending: true });
@@ -680,6 +692,9 @@ function Dashboard({ session }) {
           company:     r.company_name   ?? "",
           contact:     r.contact_person ?? "",
           project:     r.project_name   ?? "",
+          price_cabinet:   parseFloat(r.price_cabinet) || 0,
+          price_wire_busbar: parseFloat(r.price_wire_busbar) || 0,
+          price_equipment: parseFloat(r.price_equipment) || 0,
           price:       parseFloat(r.total_price) || 0,
           agent:       r.sales_agent    ?? "",
           stage:       r.stage          ?? "",
@@ -748,6 +763,9 @@ function Dashboard({ session }) {
       company_name:   "",
       contact_person: "",
       project_name:   "",
+      price_cabinet:   0,
+      price_wire_busbar: 0,
+      price_equipment: 0,
       total_price:    0,
       validity:       30,
       sales_agent:    agents[0] ?? "",
@@ -1219,6 +1237,9 @@ function Dashboard({ session }) {
             { key: "company_name",   label: "Company",      width: 200, editable: true,  type: "text" },
             { key: "contact_person", label: "Contact",      width: 150, editable: true,  type: "text" },
             { key: "project_name",   label: "Project",      width: 200, editable: true,  type: "text" },
+            { key: "price_cabinet",  label: "Price Cabinet", width: 110, editable: true,  type: "number" },
+            { key: "price_wire_busbar", label: "Price Wire/Busbar", width: 110, editable: true,  type: "number" },
+            { key: "price_equipment", label: "Price Equipment", width: 110, editable: true,  type: "number" },
             { key: "total_price",    label: "Price (฿)",    width: 110, editable: true,  type: "number" },
             { key: "revision",       label: "Revision",     width: 80,  editable: true,  type: "number" },
             { key: "sales_agent",    label: "Agent",        width: 110, editable: true,  type: "agent" },
@@ -1328,7 +1349,7 @@ function Dashboard({ session }) {
               );
             }
 
-            const displayVal = col.key === "total_price"
+            const displayVal = col.key in ["total_price", "price_cabinet", "price_wire_busbar", "price_equipment"]
               ? (val ? `฿${Number(val).toLocaleString()}` : "—")
               : col.type === "date"
               ? (isoToDisplay(val) || "—")
