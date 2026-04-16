@@ -10,6 +10,9 @@ export const FIELDS = [
   { key: "contact_person", label: "Contact Person", type: "text" },
   { key: "project_name",   label: "Project Name",   type: "text" },
   { key: "total_price",    label: "Total Price",    type: "number" },
+  { key: "price_cabinet",  label: "Price Cabinet",  type: "number" },
+  { key: "price_wire_busbar", label: "Price Wire/Busbar", type: "number" },
+  { key: "price_equipment", label: "Price Equipment", type: "number" },
   { key: "revision",       label: "Revision",       type: "number" },
   { key: "validity",       label: "Validity (days)",type: "number" },
   { key: "sales_agent",    label: "Sales Agent",    type: "select", options: [] },
@@ -29,6 +32,9 @@ export const TABLE_COLS = [
   { key: "contact_person", label: "Contact",      width: 150, editable: true,  type: "text" },
   { key: "project_name",   label: "Project",      width: 200, editable: true,  type: "text" },
   { key: "total_price",    label: "Price (฿)",    width: 110, editable: true,  type: "number" },
+  { key: "price_cabinet",  label: "Cabinet",      width: 100, editable: true,  type: "number" },
+  { key: "price_wire_busbar", label: "Wire/Busbar", width: 100, editable: true, type: "number" },
+  { key: "price_equipment", label: "Equipment",    width: 100, editable: true,  type: "number" },
   { key: "revision",       label: "Revision",     width: 80,  editable: true,  type: "number" },
   { key: "sales_agent",    label: "Agent",        width: 110, editable: true,  type: "agent" },
   { key: "stage",          label: "Stage",        width: 100, editable: true,  type: "stage" },
@@ -42,20 +48,19 @@ export const TABLE_COLS = [
 
 export const TABLE_PAGE_SIZE = 20;
 
-export const TABLE_COL_TO_DB = {
-  qo_number:      "qo_number",
-  create_date:    "create_date",
-  company_name:   "company_name",
-  contact_person: "contact_person",
-  project_name:   "project_name",
-  total_price:    "total_price",
-  revision:       "revision",
-  sales_agent:    "sales_agent",
-  stage:          "stage",
-  po_qt:          "po_qt",
-  validity:       "validity",
-  reason:         "reason",
-  follow_up_1:    "follow_up_1",
-  follow_up_2:    "follow_up_2",
-  follow_up_3:    "follow_up_3",
-};
+// Derived: Supabase select string from FIELDS keys
+export const SELECT_COLUMNS = FIELDS.map(f => f.key).join(", ");
+
+// Derived: DB column mapping (keys map to themselves)
+export const TABLE_COL_TO_DB = Object.fromEntries(FIELDS.map(f => [f.key, f.key]));
+
+// Derived: default empty row from FIELDS
+export const DEFAULT_ROW = Object.fromEntries(FIELDS.map(f => [
+  f.key,
+  f.type === "number" ? 0 : f.type === "date" ? "" : f.key === "stage" ? "On track" : "",
+]));
+
+// Derived: keys that should display as currency in the table
+export const CURRENCY_KEYS = new Set(
+  FIELDS.filter(f => f.key.startsWith("price_") || f.key === "total_price").map(f => f.key)
+);

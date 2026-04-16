@@ -3,10 +3,32 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, PieCha
 import ExcelJS from "https://esm.sh/exceljs@4.4.0";
 import { supabase } from "../supabaseClient";
 import { parseDate, getQuarter, getYear, isoToDisplay, displayToISO, getAgentColor, fmt } from "../helpers";
-import { GOAL, STAGE_COLORS, TABLE_COLS, TABLE_PAGE_SIZE, TABLE_COL_TO_DB } from "../constants";
+import { GOAL, STAGE_COLORS, TABLE_COLS, TABLE_PAGE_SIZE, TABLE_COL_TO_DB, SELECT_COLUMNS, DEFAULT_ROW, CURRENCY_KEYS } from "../constants";
 import ReviewModal from "./ReviewModal";
 
 export default function Dashboard({ session }) {
+
+  // ── Map Supabase row to internal shape ────────────────────────────────────
+  const mapRow = r => ({
+    qo:      r.qo_number      ?? '',
+    company: r.company_name   ?? '',
+    contact: r.contact_person ?? '',
+    project: r.project_name   ?? '',
+    price:   parseFloat(r.total_price) || 0,
+    agent:   r.sales_agent    ?? '',
+    stage:   r.stage          ?? '',
+    date:    r.create_date    ?? '',
+    reason:  r.reason         ?? '',
+    validity:   r.validity    ?? null,
+    po_qt:      r.po_qt       ?? '',
+    follow_up_1: r.follow_up_1 ?? '',
+    follow_up_2: r.follow_up_2 ?? '',
+    follow_up_3: r.follow_up_3 ?? '',
+    revision:    r.revision    ?? 0,
+    price_cabinet:     r.price_cabinet     ?? 0,
+    price_wire_busbar: r.price_wire_busbar ?? 0,
+    price_equipment:   r.price_equipment   ?? 0,
+  });
 
   // ── All hooks first (Rules of Hooks) ─────────────────────────────────────
   const [RAW_DATA, setRawData] = useState(null);
@@ -59,28 +81,12 @@ export default function Dashboard({ session }) {
         const { from, to } = quarterDateRange(selectedYear, selectedQ);
         const { data, error } = await supabase
           .from('sales_pipeline')
-          .select('qo_number, company_name, contact_person, project_name, total_price, validity, sales_agent, stage, create_date, reason, po_qt, follow_up_1, follow_up_2, follow_up_3, revision')
+          .select(SELECT_COLUMNS)
           .gte('create_date', from)
           .lte('create_date', to)
           .order('id', { ascending: true });
         if (error) throw error;
-        const mapped = data.map(r => ({
-          qo:      r.qo_number      ?? '',
-          company: r.company_name   ?? '',
-          contact: r.contact_person ?? '',
-          project: r.project_name   ?? '',
-          price:   parseFloat(r.total_price) || 0,
-          agent:   r.sales_agent    ?? '',
-          stage:   r.stage          ?? '',
-          date:    r.create_date    ?? '',
-          reason:     r.reason      ?? '',
-          validity:   r.validity    ?? null,
-          po_qt:      r.po_qt       ?? '',
-          follow_up_1: r.follow_up_1 ?? '',
-          follow_up_2: r.follow_up_2 ?? '',
-          follow_up_3: r.follow_up_3 ?? '',
-          revision:    r.revision    ?? 0,
-        }));
+        const mapped = data.map(mapRow);
         setRawData(mapped);
       } catch (err) {
         console.error('Supabase fetch error:', err);
@@ -100,10 +106,7 @@ export default function Dashboard({ session }) {
 
         let query = supabase
           .from("sales_pipeline")
-          .select(
-            "qo_number, company_name, contact_person, project_name, total_price, validity, sales_agent, stage, create_date, reason, po_qt, follow_up_1, follow_up_2, follow_up_3, revision",
-            { count: "exact" }
-          );
+          .select(SELECT_COLUMNS, { count: "exact" });
 
         // Full-text search via ilike on multiple columns
         if (tableSearch.trim()) {
@@ -195,7 +198,6 @@ export default function Dashboard({ session }) {
   [allForQ]);
 
   const combinedTotal = orderTotal + onTrackTotal;
-  const progress = Math.min((combinedTotal / GOAL) * 100, 100);
 
   const stagePieData = [
     { name: "Order", value: stageCounts.Order },
@@ -341,28 +343,12 @@ export default function Dashboard({ session }) {
       const { from, to } = quarterDateRange(selectedYear, selectedQ);
       const { data, error: fetchErr } = await supabase
         .from("sales_pipeline")
-        .select('qo_number, company_name, contact_person, project_name, total_price, validity, sales_agent, stage, create_date, reason, po_qt, follow_up_1, follow_up_2, follow_up_3, revision')
+        .select(SELECT_COLUMNS)
         .gte('create_date', from)
         .lte('create_date', to)
         .order("id", { ascending: true });
       if (!fetchErr) {
-        setRawData(data.map(r => ({
-          qo:          r.qo_number      ?? "",
-          company:     r.company_name   ?? "",
-          contact:     r.contact_person ?? "",
-          project:     r.project_name   ?? "",
-          price:       parseFloat(r.total_price) || 0,
-          agent:       r.sales_agent    ?? "",
-          stage:       r.stage          ?? "",
-          date:        r.create_date    ?? "",
-          reason:      r.reason         ?? "",
-          validity:    r.validity       ?? null,
-          po_qt:       r.po_qt          ?? "",
-          follow_up_1: r.follow_up_1    ?? "",
-          follow_up_2: r.follow_up_2    ?? "",
-          follow_up_3: r.follow_up_3    ?? "",
-          revision:    r.revision       ?? 0,
-        })));
+        setRawData(data.map(mapRow));
       }
     } catch (err) {
       console.error("refreshData stats error:", err);
@@ -381,7 +367,7 @@ export default function Dashboard({ session }) {
       const buffer = await file.arrayBuffer();
       const row = await extractQuotationData(buffer);
       // Add extra fields with defaults so user can fill them in
-      const fullRow = { ...row, po_qt: "", follow_up_1: "", follow_up_2: "", follow_up_3: "", revision: 0 };
+      const fullRow = { ...DEFAULT_ROW, ...row };
       setReviewRow(fullRow);
       setUploadState("idle");
     } catch (err) {
@@ -413,25 +399,12 @@ export default function Dashboard({ session }) {
   }
 
   async function handleCreateRow() {
-    const today = new Date().toISOString().split("T")[0];
-    const newRow = {
-      qo_number:      `NEW-${Date.now()}`,
-      company_name:   "",
-      contact_person: "",
-      project_name:   "",
-      total_price:    0,
-      validity:       30,
-      sales_agent:    agents[0] ?? "",
-      stage:          "On track",
-      create_date:    today,
-      reason:         "",
-      po_qt:          "",
-      follow_up_1:    "",
-      follow_up_2:    "",
-      follow_up_3:    "",
-      revision:       0,
-    };
-    setReviewRow(newRow);
+    setReviewRow({
+      ...DEFAULT_ROW,
+      validity:    30,
+      sales_agent: agents[0] ?? "",
+      create_date: new Date().toISOString().split("T")[0],
+    });
   }
 
   async function handleCellSave(qoNumber, field, value) {
@@ -884,24 +857,6 @@ export default function Dashboard({ session }) {
 
         {/* DATA TABLE TAB */}
         {activeTab === "table" && (() => {
-          const TABLE_COLS = [
-            { key: "qo_number",      label: "QO Number",    width: 110, editable: false },
-            { key: "create_date",    label: "Date",         width: 110, editable: true,  type: "date" },
-            { key: "company_name",   label: "Company",      width: 200, editable: true,  type: "text" },
-            { key: "contact_person", label: "Contact",      width: 150, editable: true,  type: "text" },
-            { key: "project_name",   label: "Project",      width: 200, editable: true,  type: "text" },
-            { key: "total_price",    label: "Price (฿)",    width: 110, editable: true,  type: "number" },
-            { key: "revision",       label: "Revision",     width: 80,  editable: true,  type: "number" },
-            { key: "sales_agent",    label: "Agent",        width: 110, editable: true,  type: "agent" },
-            { key: "stage",          label: "Stage",        width: 100, editable: true,  type: "stage" },
-            { key: "po_qt",          label: "PO/QT",        width: 90,  editable: true,  type: "text" },
-            { key: "validity",       label: "Validity",     width: 80,  editable: true,  type: "number" },
-            { key: "reason",         label: "Reason",       width: 160, editable: true,  type: "text" },
-            { key: "follow_up_1",    label: "Follow Up 1",  width: 130, editable: true,  type: "text" },
-            { key: "follow_up_2",    label: "Follow Up 2",  width: 130, editable: true,  type: "text" },
-            { key: "follow_up_3",    label: "Follow Up 3",  width: 130, editable: true,  type: "text" },
-          ];
-
           // Server-side data — tableRows already paginated/filtered/sorted by Supabase
           const totalPages = Math.max(1, Math.ceil(tableTotal / TABLE_PAGE_SIZE));
           const page = Math.min(tablePage, totalPages);
@@ -999,7 +954,7 @@ export default function Dashboard({ session }) {
               );
             }
 
-            const displayVal = col.key === "total_price"
+            const displayVal = CURRENCY_KEYS.has(col.key)
               ? (val ? `฿${Number(val).toLocaleString()}` : "—")
               : col.type === "date"
               ? (isoToDisplay(val) || "—")
